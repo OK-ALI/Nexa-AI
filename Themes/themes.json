@@ -1,0 +1,108 @@
+{
+  "dark": {
+    "name": "Dark Theme",
+    "description": "Original dark navy theme with cyan accents",
+    "background": {
+      "gradient_start": "#0A0F19",
+      "gradient_end": "#050A12"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#00D4FF",
+      "tertiary": "#0088CC",
+      "dim": "rgba(0, 136, 204, 100)"
+    },
+    "title": {
+      "main": "#00D4FF",
+      "subtitle": "#0088CC"
+    },
+    "buttons": {
+      "background": "rgba(50, 70, 100, 100)",
+      "background_hover": "rgba(70, 90, 120, 150)",
+      "text": "#00D4FF",
+      "online_bg": "rgba(0, 180, 100, 120)",
+      "online_hover": "rgba(0, 200, 120, 150)",
+      "online_text": "#FFFFFF",
+      "offline_bg": "rgba(100, 100, 120, 120)",
+      "offline_hover": "rgba(120, 120, 140, 150)",
+      "offline_text": "#00D4FF",
+      "close_bg": "rgba(200, 50, 50, 120)",
+      "close_hover": "rgba(220, 70, 70, 180)",
+      "close_text": "#FFFFFF"
+    },
+    "orb": {
+      "listening": "#00D4FF",
+      "thinking": "#9F7FFF",
+      "responding": "#00FF96",
+      "idle": "#0088CC",
+      "error": "#FF4757",
+      "border": "rgba(0, 212, 255, 50)"
+    },
+    "status": {
+      "active": "#00D4FF",
+      "inactive": "rgba(0, 136, 204, 80)",
+      "listening": "#00D4FF",
+      "thinking": "#9F7FFF",
+      "responding": "#00FF96"
+    },
+    "music_indicator": {
+      "background": "rgba(50, 70, 100, 100)",
+      "text": "#00D4FF",
+      "visualizer": "#00D4FF",
+      "icon": "#00D4FF"
+    }
+  },
+  "light": {
+    "name": "Light Theme",
+    "description": "Soft light blue theme with darker accents",
+    "background": {
+      "gradient_start": "#E8F4F8",
+      "gradient_end": "#D5E9F0"
+    },
+    "text": {
+      "primary": "#1A1A1A",
+      "secondary": "#0088CC",
+      "tertiary": "#00609B",
+      "dim": "rgba(74, 85, 104, 100)"
+    },
+    "title": {
+      "main": "#0088CC",
+      "subtitle": "#00609B"
+    },
+    "buttons": {
+      "background": "rgba(0, 136, 204, 20)",
+      "background_hover": "rgba(0, 136, 204, 35)",
+      "text": "#0088CC",
+      "online_bg": "rgba(0, 180, 100, 25)",
+      "online_hover": "rgba(0, 180, 100, 40)",
+      "online_text": "#006B4A",
+      "offline_bg": "rgba(100, 100, 120, 25)",
+      "offline_hover": "rgba(100, 100, 120, 40)",
+      "offline_text": "#555577",
+      "close_bg": "rgba(220, 50, 50, 25)",
+      "close_hover": "rgba(220, 50, 50, 40)",
+      "close_text": "#CC0000"
+    },
+    "orb": {
+      "listening": "#005A99",
+      "thinking": "#5B48CE",
+      "responding": "#008855",
+      "idle": "#4477AA",
+      "error": "#BB1122",
+      "border": "rgba(0, 90, 153, 100)"
+    },
+    "status": {
+      "active": "#0088CC",
+      "inactive": "rgba(0, 136, 204, 50)",
+      "listening": "#0088CC",
+      "thinking": "#7B68EE",
+      "responding": "#00AA77"
+    },
+    "music_indicator": {
+      "background": "rgba(0, 136, 204, 20)",
+      "text": "#0088CC",
+      "visualizer": "#0088CC",
+      "icon": "#0088CC"
+    }
+  }
+}

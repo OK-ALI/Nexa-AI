@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Nexa specific
+data/memory.json
+data/user_prefs.json
+data/logs/
+data/weather_cache/
+data/speaker_profiles/
+models/whisper/*.bin
+voice/piper_models/*.onnx
+voice/piper_models/*.json
+voice/kokoro_models/*.onnx
+voice/kokoro_models/*.bin
+config/ui_preferences.json
+
+# Build outputs
+Output/
+*.exe
+*.bin
+build_log.txt
+crash.txt
+crash_output.txt
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.wav
+*.mp3
