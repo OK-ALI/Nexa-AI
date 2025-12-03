@@ -230,6 +230,7 @@ Fill out our **Feedback Form** (link in release notes) or create an issue on Git
 Nexa is currently in **Beta**. We welcome your feedback!
 
 - 📝 [Submit Feedback Form](https://forms.gle/YOUR_FORM_ID_HERE)
+- 🐛 [Report Bugs on GitHub](https://github.com/OK-ALI/Nexa-AI/issues)
 - 📚 [Release Notes](RELEASE_NOTES.md) — See what's new in this version
 - 📖 [Command Guide](COMMAND_GUIDE.md) — Full list of voice commands
 
