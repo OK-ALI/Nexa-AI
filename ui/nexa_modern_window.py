@@ -867,3 +867,16 @@ class NexaModernWindow(QMainWindow):
         """Handle mouse release."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_position = None
+    
+    def closeEvent(self, event):
+        """Handle window close - ensure GPU models are unloaded."""
+        logger.info("🚪 Closing Nexa Modern Window...")
+        
+        # Shutdown brain (this unloads all GPU models)
+        try:
+            self.brain.shutdown()
+            logger.info("✅ Brain shutdown complete - GPU VRAM freed")
+        except Exception as e:
+            logger.error(f"Error during brain shutdown: {e}")
+        
+        event.accept()

@@ -511,6 +511,33 @@ class SpeakerVerification:
             logger.error(f"❌ Failed to delete profile: {e}")
             return False
     
+    def cleanup(self):
+        """Unload model and free GPU memory."""
+        import gc
+        
+        if self.classifier is not None:
+            try:
+                logger.info("🧹 Unloading SpeechBrain model from GPU...")
+                del self.classifier
+                self.classifier = None
+            except Exception as e:
+                logger.debug(f"Error unloading SpeechBrain: {e}")
+        
+        # Clear profile cache
+        self.profiles.clear()
+        self.profile_metadata.clear()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Clear CUDA cache
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info("✅ SpeechBrain GPU memory freed")
+        except Exception as e:
+            logger.debug(f"Error clearing CUDA cache: {e}")
+    
     def get_stats(self) -> Dict:
         """Get verification statistics."""
         avg_time = (self.total_verification_time / self.verification_count 

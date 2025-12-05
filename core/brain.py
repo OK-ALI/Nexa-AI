@@ -383,19 +383,50 @@ class NexaBrain:
             logger.info("💡 Switch to online mode for internet-dependent features (vision, web search, weather)")
     
     def shutdown(self):
-        """Gracefully shutdown all components."""
+        """Gracefully shutdown all components and free GPU memory."""
         logger.info("Initiating Nexa Brain shutdown...")
+        logger.info("🎮 Unloading ALL AI models to free GPU VRAM for games/other apps...")
         self.running = False
         
-        # Stop components
-        self.listener.stop()
+        # Stop components and unload GPU models
+        logger.info("🧹 Stopping listener and unloading Whisper/DeepFilterNet from GPU...")
+        self.listener.stop()  # This now unloads Whisper, DeepFilterNet, Silero VAD
+        
+        logger.info("🧹 Stopping TTS and unloading Kokoro model...")
         self.tts.stop()
+        if hasattr(self.tts, 'cleanup'):
+            self.tts.cleanup()  # Unload Kokoro model
+        
+        # Cleanup speaker verification if enabled
+        if hasattr(self.listener, 'speaker_verifier') and self.listener.speaker_verifier:
+            if hasattr(self.listener.speaker_verifier, 'cleanup'):
+                logger.info("🧹 Unloading SpeechBrain model from GPU...")
+                self.listener.speaker_verifier.cleanup()
+        
+        # === CRITICAL: Unload Ollama/Llama model ===
+        if hasattr(self, 'llm_manager') and self.llm_manager:
+            logger.info("🧹 Unloading Llama 3.1 8B from Ollama...")
+            self.llm_manager.cleanup()
         
         # Wait for thread to finish
         if self.brain_thread and self.brain_thread.is_alive():
             self.brain_thread.join(timeout=2.0)
         
-        logger.info("Nexa Brain shutdown complete")
+        # Final CUDA cache clear
+        try:
+            import torch
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                logger.info("✅ All GPU VRAM freed - safe to run games!")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"Error in final CUDA cleanup: {e}")
+        
+        logger.info("🎮 Nexa Brain shutdown complete - GPU memory released!")
     
     def _processing_loop(self):
         """Main processing loop for handling transcriptions and generating responses."""

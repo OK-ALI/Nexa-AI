@@ -267,3 +267,30 @@ class TTSEngine:
         if self.current_channel and self.current_channel.get_busy():
             self.current_channel.stop()
             logger.info("🛑 Speech playback stopped")
+    
+    def cleanup(self):
+        """Unload Kokoro model and free memory."""
+        import gc
+        
+        # Stop any ongoing playback
+        self.stop()
+        
+        # Unload Kokoro model
+        if self.kokoro is not None:
+            try:
+                logger.info("🧹 Unloading Kokoro TTS model...")
+                del self.kokoro
+                self.kokoro = None
+            except Exception as e:
+                logger.debug(f"Error unloading Kokoro: {e}")
+        
+        # Quit pygame mixer
+        try:
+            pygame.mixer.quit()
+            logger.info("✅ Pygame mixer closed")
+        except Exception as e:
+            logger.debug(f"Error closing pygame mixer: {e}")
+        
+        # Force garbage collection
+        gc.collect()
+        logger.info("✅ TTS resources freed")

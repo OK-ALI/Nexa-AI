@@ -451,7 +451,7 @@ class AudioListener:
         logger.info("Stopped listening")
     
     def stop(self):
-        """Cleanup audio resources."""
+        """Cleanup audio resources and unload GPU models."""
         self.stop_listening()
         
         if self.stream:
@@ -469,7 +469,58 @@ class AudioListener:
             except Exception as e:
                 logger.debug(f"Error terminating PyAudio: {e}")
         
+        # === CRITICAL: Unload GPU models from VRAM ===
+        self._unload_gpu_models()
+        
         logger.info("Audio listener stopped")
+    
+    def _unload_gpu_models(self):
+        """Unload all GPU models to free VRAM."""
+        import gc
+        
+        # Unload Whisper model
+        if self.whisper_model is not None:
+            try:
+                logger.info("🧹 Unloading Whisper model from GPU...")
+                del self.whisper_model
+                self.whisper_model = None
+            except Exception as e:
+                logger.debug(f"Error unloading Whisper: {e}")
+        
+        # Unload DeepFilterNet model
+        if self.df_model is not None:
+            try:
+                logger.info("🧹 Unloading DeepFilterNet model...")
+                del self.df_model
+                del self.df_state
+                self.df_model = None
+                self.df_state = None
+            except Exception as e:
+                logger.debug(f"Error unloading DeepFilterNet: {e}")
+        
+        # Unload Silero VAD model
+        if self.vad_model is not None:
+            try:
+                logger.info("🧹 Unloading Silero VAD model...")
+                del self.vad_model
+                self.vad_model = None
+            except Exception as e:
+                logger.debug(f"Error unloading Silero VAD: {e}")
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Clear CUDA cache if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                logger.info("✅ CUDA cache cleared - GPU VRAM freed")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"Error clearing CUDA cache: {e}")
     
     def _recording_loop(self):
         """Main recording loop with DeepFilterNet2 noise cancellation and Silero VAD."""

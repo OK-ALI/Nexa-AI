@@ -1133,3 +1133,44 @@ Answer:"""
             logger.error(f"❌ Smart follow-up detection error: {e}")
             # Fallback: return False (use pattern matching instead)
             return False
+
+    def cleanup(self):
+        """
+        Unload Ollama model from GPU memory.
+        Called during Nexa shutdown to free VRAM for other applications (games, etc.)
+        """
+        if not self.ollama_available:
+            logger.debug("Ollama not available, skipping cleanup")
+            return
+        
+        try:
+            logger.info(f"🧹 Unloading {self.llama_model} from Ollama (freeing ~5-6GB VRAM)...")
+            
+            # Send request with keep_alive=0 to unload the model
+            response = requests.post(
+                f"{self.ollama_url}/api/generate",
+                json={
+                    "model": self.llama_model,
+                    "prompt": "",  # Empty prompt
+                    "keep_alive": 0  # 0 = unload immediately
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('done_reason') == 'unload' or result.get('done'):
+                    logger.info(f"✅ {self.llama_model} unloaded from Ollama - VRAM freed!")
+                    self.ollama_prewarmed = False  # Mark as no longer pre-warmed
+                else:
+                    logger.info(f"✅ Unload request sent to Ollama")
+            else:
+                logger.warning(f"⚠️ Ollama unload returned status {response.status_code}")
+                
+        except requests.exceptions.Timeout:
+            logger.warning("⚠️ Ollama unload timeout - model may still be loaded")
+        except requests.exceptions.ConnectionError:
+            logger.debug("Ollama not running, nothing to unload")
+        except Exception as e:
+            logger.debug(f"Error unloading Ollama model: {e}")
+

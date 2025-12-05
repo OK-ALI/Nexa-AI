@@ -95,17 +95,20 @@ We're excited to release the first public beta of **Nexa AI Assistant** — a fu
 Nexa gives you full control over internet connectivity with manual mode switching:
 
 ### Online Mode 🌐
+
 - Uses internet for weather, web searches, and enhanced AI responses
 - Button shows **green** with "🌐 ONLINE" text
 - Required for weather updates and web searches
 
 ### Offline Mode 🔒
+
 - **100% local processing** — no internet required
 - Button shows **purple** with "🔒 OFFLINE" text
 - All AI processing happens on your PC via Ollama
 - Perfect for privacy-focused use or when offline
 
 ### How to Switch
+
 - **Click the Mode Button**: Located in the control bar at the bottom of Nexa's window
 - **Voice Command**: "Switch to offline mode" or "Go online"
 - Nexa will announce the mode change audibly
@@ -116,18 +119,19 @@ Nexa gives you full control over internet connectivity with manual mode switchin
 
 Nexa uses a visual state system to show you exactly what it's doing. The **animated orb** changes color to indicate the current state:
 
-| State | Color | Description |
-|-------|-------|-------------|
-| **Idle** | 🔵 Soft Blue | Waiting for wake word or command |
-| **Listening** | 🔷 Electric Cyan | Actively listening to your voice |
-| **Recognizing** | 🟣 Purple | Processing speech / Speaker verification |
-| **Thinking** | 🟪 Vibrant Purple | AI is processing your request |
-| **Speaking** | 🩵 Bright Teal | Nexa is speaking the response |
-| **Executing** | 🔷 Electric Cyan | Performing an action (opening app, etc.) |
-| **Content Mode** | 🟣 Deep Purple | Text editing or PDF generation active |
-| **Error** | 🔴 Bright Red | Something went wrong |
+| State                  | Color             | Description                              |
+| ---------------------- | ----------------- | ---------------------------------------- |
+| **Idle**         | 🔵 Soft Blue      | Waiting for wake word or command         |
+| **Listening**    | 🔷 Electric Cyan  | Actively listening to your voice         |
+| **Recognizing**  | 🟣 Purple         | Processing speech / Speaker verification |
+| **Thinking**     | 🟪 Vibrant Purple | AI is processing your request            |
+| **Speaking**     | 🩵 Bright Teal    | Nexa is speaking the response            |
+| **Executing**    | 🔷 Electric Cyan  | Performing an action (opening app, etc.) |
+| **Content Mode** | 🟣 Deep Purple    | Text editing or PDF generation active    |
+| **Error**        | 🔴 Bright Red     | Something went wrong                     |
 
 ### Visual Feedback
+
 - The orb **pulses** when listening
 - The orb **glows** when Nexa is speaking
 - Smooth **color transitions** between states
@@ -139,16 +143,18 @@ Nexa uses a visual state system to show you exactly what it's doing. The **anima
 
 Nexa's window features a clean, minimal interface with these controls:
 
-| Control | Location | Function |
-|---------|----------|----------|
-| **Voice Orb** | Center | Main interaction point — animates based on state |
-| **Mode Toggle** | Bottom bar | Switch between Online 🌐 and Offline 🔒 modes |
-| **Theme Button** | Bottom bar | Change Nexa's visual theme (Dark, Light, Neon, etc.) |
-| **Music Indicator** | Top area | Animated visualizer showing current song |
-| **Status Text** | Bottom | Displays what Nexa is currently doing |
+| Control                   | Location | Function                                             |
+| ------------------------- | -------- | ---------------------------------------------------- |
+| **Voice Orb**       | Center   | Main interaction point — animates based on state    |
+| **Mode Toggle**     | Top area | Switch between Online 🌐 and Offline 🔒 modes        |
+| **Theme Button**    | Top area | Change Nexa's visual theme (Dark, Light, Neon, etc.) |
+| **Music Indicator** | Top area | Animated visualizer showing current song             |
+| **Status Text**     | Bottom   | Displays what Nexa is currently doing                |
 
 ### System Tray
+
 Nexa runs in the system tray with quick access to:
+
 - Show/Hide main window
 - Toggle Online/Offline mode
 - Pause/Resume listening
