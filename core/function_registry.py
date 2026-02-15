@@ -421,6 +421,112 @@ class FunctionRegistry:
             {"folder_name": "Folder name to find"}
         )
         
+        # ===== FILE MANAGEMENT (Phase 21) =====
+        self.register(
+            "create_file",
+            self.executor.file_manager.create_file,
+            "Create a new text file with optional content. Use for: 'create a file called notes.txt', 'make a new file'",
+            {"file_path": "Path/name for the new file (e.g., 'documents/notes.txt')", "content": "Optional: text content to write into the file"}
+        )
+        
+        self.register(
+            "move_file",
+            self.executor.file_manager.move_file,
+            "Move a file or folder to a new location. Use for: 'move report.pdf to documents', 'move this file to desktop'",
+            {"source": "Source file/folder path", "destination": "Destination path or directory"}
+        )
+        
+        self.register(
+            "copy_file",
+            self.executor.file_manager.copy_file,
+            "Copy a file or folder to a new location. Use for: 'copy this file to desktop', 'make a copy of report.pdf'",
+            {"source": "Source file/folder path", "destination": "Destination path or directory"}
+        )
+        
+        self.register(
+            "delete_file",
+            self.executor.file_manager.delete_file,
+            "Delete a file or folder (moves to Recycle Bin for safety). Use for: 'delete old_report.pdf', 'remove this file'",
+            {"file_path": "Path of file/folder to delete"}
+        )
+        
+        self.register(
+            "rename_file",
+            self.executor.file_manager.rename_file,
+            "Rename a file or folder. Use for: 'rename report.pdf to final_report.pdf', 'change the name of this file'",
+            {"file_path": "Current path of the file/folder", "new_name": "New filename (just name, not full path)"}
+        )
+        
+        self.register(
+            "search_files",
+            self.executor.file_manager.search_files,
+            "Search for files by name. Use for: 'find files named report', 'search for pdf files in documents', 'look for photos'",
+            {"query": "Search term (e.g., 'report', 'budget')", "location": "Optional: directory to search (default: home folder)", "file_type": "Optional: file extension filter (e.g., 'pdf', 'txt', 'jpg')"}
+        )
+        
+        self.register(
+            "get_recent_files",
+            self.executor.file_manager.get_recent_files,
+            "Show recently modified files in a directory. Use for: 'show recent downloads', 'what did I download recently', 'latest files'",
+            {"location": "Optional: directory to check (default: downloads)", "count": "Optional: number of files to show (default: 10)"}
+        )
+        
+        self.register(
+            "find_duplicates",
+            self.executor.file_manager.find_duplicates,
+            "Find duplicate files in a directory. Use for: 'find duplicates in downloads', 'check for duplicate files'",
+            {"location": "Optional: directory to check (default: downloads)"}
+        )
+        
+        self.register(
+            "organize_files",
+            self.executor.file_manager.organize_files,
+            "Organize files into category subfolders (Images, Documents, Videos, etc.). Use for: 'organize my downloads', 'sort files in downloads', 'clean up downloads folder'",
+            {"location": "Optional: directory to organize (default: downloads)"}
+        )
+        
+        self.register(
+            "cleanup_downloads",
+            self.executor.file_manager.cleanup_downloads,
+            "Analyze the Downloads folder - report old files, large files, and suggest cleanup. Use for: 'clean up downloads', 'analyze my downloads folder', 'what's taking space in downloads'",
+            {}
+        )
+        
+        self.register(
+            "bulk_rename",
+            self.executor.file_manager.bulk_rename,
+            "Rename multiple files at once using find-and-replace. Use for: 'rename all files replacing old with new', 'batch rename photos'",
+            {"location": "Directory containing files", "pattern": "Text to find in filenames", "replacement": "Text to replace with", "file_type": "Optional: file extension filter (e.g., 'jpg')"}
+        )
+        
+        self.register(
+            "compress_files",
+            self.executor.file_manager.compress_files,
+            "Compress a file or folder into a ZIP archive. Use for: 'zip this folder', 'compress report.pdf', 'create archive of documents'",
+            {"source": "File or folder path to compress", "archive_name": "Optional: name for the ZIP file"}
+        )
+        
+        self.register(
+            "extract_archive",
+            self.executor.file_manager.extract_archive,
+            "Extract/unzip a ZIP archive. Use for: 'extract archive.zip', 'unzip this file', 'decompress the zip'",
+            {"archive_path": "Path to the ZIP file", "destination": "Optional: extraction directory"}
+        )
+        
+        self.register(
+            "get_file_info",
+            self.executor.file_manager.get_file_info,
+            "Get detailed information about a file or folder (size, type, dates). Use for: 'info about report.pdf', 'how big is this file', 'file details'",
+            {"file_path": "Path to the file or folder"}
+        )
+        
+        self.register(
+            "list_folder",
+            self.executor.file_manager.list_folder,
+            "List contents of a folder with details. Use for: 'list files in documents', 'show what's in downloads', 'folder contents'",
+            {"location": "Optional: directory to list (default: downloads)", "sort_by": "Optional: sort by 'name', 'size', or 'date' (default: name)"}
+        )
+        
         # ===== MUSIC CONTROL =====
         self.register(
             "play_music",

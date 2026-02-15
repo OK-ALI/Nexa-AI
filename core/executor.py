@@ -36,6 +36,7 @@ from .file_share_handler import FileShareHandler
 from .application_controller import ApplicationController
 from .screen_controller import ScreenController
 from .system_info_controller import SystemInfoController
+from .file_manager import FileManager
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,9 @@ class CommandExecutor(QObject):
         
         # Initialize game manager for Phase 12
         self.game_manager = GameManager()
+        
+        # Initialize file manager for Phase 21 (file operations & organization)
+        self.file_manager = FileManager()
         
         # Initialize music manager for local music playback
         self.music_manager = MusicManager()
