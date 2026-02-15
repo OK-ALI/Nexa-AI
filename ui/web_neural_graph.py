@@ -1,10 +1,9 @@
 """
 Web Neural Brain Widget — HTML5 Canvas Memory Visualization
 
-A QWebEngineView-based neural graph that replaces the QPainter-based
-NeuralBrainWidget with a modern particle-driven visualization.
+QWebEngineView-based neural graph with a particle-driven visualization.
 
-Same public API as NeuralBrainWidget:
+Public API:
     - set_memories(memories)
     - clear_selection()
     - get_selected_memory()
@@ -72,10 +71,11 @@ class WebNeuralBrainWidget(QWidget):
     """
     HTML5 Canvas neural brain visualization.
 
-    Drop-in replacement for NeuralBrainWidget (ui/neural_graph.py).
+    Uses QWebEngineView with assets/neural_memory/index.html for
+    a particle-based, force-directed memory node graph.
     """
 
-    # Signals — same names as NeuralBrainWidget
+    # Signals
     node_selected = Signal(str)   # memory_id
     node_hovered = Signal(str)    # memory_id
 
@@ -92,7 +92,7 @@ class WebNeuralBrainWidget(QWidget):
         self._selected_id: Optional[str] = None
         self._memories_lookup: Dict[str, Dict[str, Any]] = {}
 
-        # Compatibility shims for NeuralBrainWidget API
+        # Node lookup for panel integration
         self.nodes: Dict[str, Any] = {}
         self.center_offset = QPoint(0, 0)
 
@@ -191,7 +191,7 @@ class WebNeuralBrainWidget(QWidget):
             logger.debug(f"Neural stats: {payload.get('total')} total, {payload.get('visible')} visible")
 
     # ====================================================================
-    # Public API  (mirrors NeuralBrainWidget)
+    # Public API
     # ====================================================================
 
     def set_memories(self, memories: List[Dict[str, Any]]):

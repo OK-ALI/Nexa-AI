@@ -1357,7 +1357,7 @@ Transformed the static Qt-painted voice orb into a **stunning particle visualiza
 
 **Core Modules:**
 - `core/smart_memory/` ✅ (package with 6 modules)
-- `ui/memory_panel.py` ✅ (Memory GUI)
+- `ui/neural_memory_panel.py` ✅ (Neural Memory GUI + web-based graph)
 - `intent_state.py` ✅ (Dynamic follow-ups)
 
 #### 🧠 Vision: Nexa Thinking & Knowledge Ability
@@ -1408,11 +1408,12 @@ core/smart_memory/
 └── memory_consolidator.py      # Long-term merge
 ```
 
-**New GUI:** `ui/memory_panel.py`
-- Modern glassmorphism design
-- Search, view, edit, delete memories
-- Category tabs (Conversations, Knowledge, Skills)
-- Export/Import functionality
+**New GUI:** `ui/neural_memory_panel.py` + `ui/web_neural_graph.py`
+- Neural brain visualization using HTML5 Canvas (QWebEngineView)
+- Force-directed particle nodes with parallax depth
+- Floating detail card on node selection
+- Search filtering, type filtering, export/import, purge
+- Users view with registered user cards
 
 #### 🗃️ Memory Types
 
