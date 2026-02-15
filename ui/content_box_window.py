@@ -494,22 +494,28 @@ class ContentBoxWindow(QMainWindow):
 
         self.central_widget.setStyleSheet("background: transparent;")
 
+        border_accent = tm.get_color('panels', 'border_accent', default='rgba(0, 212, 255, 0.3)')
+        glow_color = tm.get_color('panels', 'glow', default='rgba(0, 150, 255, 50)')
+        self.container.setObjectName("contentPanel")
         self.container.setStyleSheet(f"""
-            QWidget {{
+            #contentPanel {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
                     stop:0 {bg_start}, stop:1 {bg_end}
                 );
-                border-radius: 12px;
+                border: 1px solid {border_accent};
+                border-radius: 14px;
             }}
         """)
 
         from PySide6.QtWidgets import QGraphicsDropShadowEffect
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(40)
+        shadow.setBlurRadius(50)
         shadow.setXOffset(0)
-        shadow.setYOffset(0)
-        shadow.setColor(QColor(0, 0, 0, 60 if is_dark else 40))
+        shadow.setYOffset(2)
+        # Parse glow color from theme
+        glow_qcolor = QColor(0, 150, 255, 50) if is_dark else QColor(0, 100, 180, 35)
+        shadow.setColor(glow_qcolor)
         self.container.setGraphicsEffect(shadow)
 
         self.title_label.setStyleSheet(f"""

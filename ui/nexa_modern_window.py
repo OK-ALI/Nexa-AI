@@ -136,12 +136,13 @@ class NexaModernWindow(QMainWindow):
         """Setup the complete UI."""
         # Central widget
         central = QWidget()
+        central.setObjectName("nexaMainPanel")
         self.setCentralWidget(central)
         self.central_widget = central  # Store for theme updates
         
-        # Main layout
+        # Main layout (1px margin for border visibility)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(1, 1, 1, 1)
         main_layout.setSpacing(0)
         
         # Background will be set by _apply_theme()
@@ -1056,14 +1057,16 @@ class NexaModernWindow(QMainWindow):
         """Apply current theme to all UI elements"""
         tm = self.theme_manager
         
-        # Background gradient
+        # Background gradient with modern accent border
+        panel_border = tm.get_color('panels', 'border', default='rgba(0, 212, 255, 0.12)')
         self.central_widget.setStyleSheet(f"""
-            QWidget {{
+            #nexaMainPanel {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
                     stop:0 {tm.get_color('background', 'gradient_start')},
                     stop:1 {tm.get_color('background', 'gradient_end')}
                 );
+                border: 1px solid {panel_border};
             }}
         """)
         

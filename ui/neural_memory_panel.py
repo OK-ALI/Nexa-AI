@@ -31,25 +31,30 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 PANEL_STYLE = """
     QFrame#NeuralMemoryPanel {
-        background: rgba(10, 10, 30, 0.95);
-        border: 1px solid rgba(0, 255, 255, 0.3);
-        border-radius: 20px;
+        background: qlineargradient(
+            x1:0, y1:0, x2:0.3, y2:1,
+            stop:0 rgba(12, 14, 35, 0.97),
+            stop:0.5 rgba(8, 10, 28, 0.96),
+            stop:1 rgba(6, 8, 24, 0.95)
+        );
+        border: 1px solid rgba(0, 200, 255, 0.25);
+        border-radius: 18px;
     }
 """
 
 SEARCH_STYLE = """
     QLineEdit {
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(0, 180, 255, 0.3);
-        border-radius: 12px;
-        padding: 10px 16px;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(0, 180, 255, 0.2);
+        border-radius: 14px;
+        padding: 10px 18px;
         font-size: 13px;
         color: rgba(200, 230, 255, 0.9);
     }
     
     QLineEdit:focus {
-        border: 1px solid rgba(0, 220, 255, 0.7);
-        background: rgba(0, 20, 40, 0.5);
+        border: 1px solid rgba(0, 200, 255, 0.6);
+        background: rgba(0, 15, 35, 0.5);
     }
     
     QLineEdit::placeholder {
@@ -59,22 +64,23 @@ SEARCH_STYLE = """
 
 BUTTON_STYLE = """
     QPushButton {
-        background: rgba(0, 150, 220, 0.2);
-        border: 1px solid rgba(0, 180, 255, 0.3);
-        border-radius: 8px;
+        background: rgba(0, 140, 220, 0.15);
+        border: 1px solid rgba(0, 180, 255, 0.2);
+        border-radius: 10px;
         color: rgba(200, 230, 255, 0.9);
         font-size: 12px;
-        padding: 8px 16px;
+        font-weight: 500;
+        padding: 8px 18px;
         min-width: 80px;
     }
     
     QPushButton:hover {
-        background: rgba(0, 180, 255, 0.35);
-        border-color: rgba(0, 220, 255, 0.6);
+        background: rgba(0, 180, 255, 0.3);
+        border-color: rgba(0, 220, 255, 0.5);
     }
     
     QPushButton:pressed {
-        background: rgba(0, 200, 255, 0.4);
+        background: rgba(0, 200, 255, 0.35);
     }
 """
 
@@ -166,10 +172,10 @@ class NeuralMemoryPanel(QWidget):
         
         # Outer glow effect
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(50)
+        shadow.setBlurRadius(60)
         shadow.setXOffset(0)
-        shadow.setYOffset(0)
-        shadow.setColor(QColor(0, 180, 255, 100))
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 160, 255, 80))
         self.container.setGraphicsEffect(shadow)
         
         # ── Floating detail card (created but hidden) ──

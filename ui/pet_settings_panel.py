@@ -1,13 +1,14 @@
 """
-Pet Settings Panel - Customization UI for Nexa Pet
-A floating futuristic settings panel with sliders and toggles.
+Companion Settings Panel - Customization UI for Nexa Companion
+A floating futuristic settings panel with animated toggles and modern styling.
 
 Features:
 - Size slider (50-200%)
 - Opacity slider (20-100%)
-- Toggle switches for options
+- Animated toggle switches with sliding dot
 - Nexa theme (cyan/blue on dark navy)
-- Glassmorphism with neon glow
+- Glassmorphism with gradient border glow
+- Section cards with subtle backgrounds
 
 Part of P6: Settings Panel & Customization
 """
@@ -17,13 +18,108 @@ from typing import Optional, Callable
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
-    QPushButton, QCheckBox, QFrame, QGraphicsDropShadowEffect,
+    QPushButton, QFrame, QGraphicsDropShadowEffect,
     QApplication
 )
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QPoint
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import (
+    Qt, Signal, QPropertyAnimation, QEasingCurve, QPoint,
+    Property, QRectF
+)
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Animated Toggle Switch Widget
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ToggleSwitch(QWidget):
+    """
+    Modern animated toggle switch with sliding circle handle.
+    Mimics iOS/Material Design toggle with smooth animation.
+    """
+    toggled = Signal(bool)
+
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(46, 24)
+        self._checked = checked
+        self._handle_pos = 1.0 if checked else 0.0
+
+        # Smooth slide animation
+        self._anim = QPropertyAnimation(self, b"handlePos")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def get_handle_pos(self):
+        return self._handle_pos
+
+    def set_handle_pos(self, val):
+        self._handle_pos = val
+        self.update()
+
+    handlePos = Property(float, get_handle_pos, set_handle_pos)
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, checked):
+        if self._checked != checked:
+            self._checked = checked
+            self._handle_pos = 1.0 if checked else 0.0
+            self.update()
+
+    def mousePressEvent(self, event):
+        self._checked = not self._checked
+        self._anim.stop()
+        self._anim.setStartValue(self._handle_pos)
+        self._anim.setEndValue(1.0 if self._checked else 0.0)
+        self._anim.start()
+        self.toggled.emit(self._checked)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        r = h / 2.0
+        t = self._handle_pos  # 0.0 → 1.0 interpolation
+
+        # ── Track ──
+        # Blend from dark gray (off) to cyan-blue (on)
+        off_r, off_g, off_b = 40, 48, 65
+        on_r, on_g, on_b = 0, 170, 240
+        tr = int(off_r + (on_r - off_r) * t)
+        tg = int(off_g + (on_g - off_g) * t)
+        tb = int(off_b + (on_b - off_b) * t)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(tr, tg, tb, 220))
+        p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
+
+        # ── Track border (glows when active) ──
+        border_alpha = int(40 + 140 * t)
+        p.setPen(QPen(QColor(0, 200, 255, border_alpha), 1.0))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), r, r)
+
+        # ── Handle (white circle with shadow) ──
+        handle_d = h - 6  # circle diameter
+        handle_x = 3 + t * (w - h)
+        handle_y = 3.0
+
+        # Shadow under handle
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 35))
+        p.drawEllipse(QRectF(handle_x, handle_y + 1, handle_d, handle_d))
+
+        # Handle circle
+        p.setBrush(QColor(255, 255, 255, 250))
+        p.drawEllipse(QRectF(handle_x, handle_y, handle_d, handle_d))
+
+        p.end()
 
 
 class PetSettingsPanel(QWidget):
@@ -83,30 +179,30 @@ class PetSettingsPanel(QWidget):
         self.setMinimumHeight(520)
     
     def _setup_ui(self):
-        """Setup the panel UI."""
+        """Setup the panel UI with section cards and animated toggles."""
         # Main layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(0)
         
         # Container for styling
         self.container = QFrame()
         self.container.setObjectName("settingsContainer")
         container_layout = QVBoxLayout(self.container)
-        container_layout.setContentsMargins(16, 12, 16, 16)
-        container_layout.setSpacing(6)
+        container_layout.setContentsMargins(14, 12, 14, 14)
+        container_layout.setSpacing(8)
         
         # Header with title and close button
         header = QHBoxLayout()
         header.setSpacing(10)
         
-        title = QLabel("Companion Settings")
+        title = QLabel("✦ Companion Settings")
         title.setObjectName("panelTitle")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         
         self.close_btn = QPushButton("✕")
         self.close_btn.setObjectName("closeButton")
-        self.close_btn.setFixedSize(28, 28)
+        self.close_btn.setFixedSize(30, 30)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.clicked.connect(self._close_panel)
         
@@ -115,119 +211,117 @@ class PetSettingsPanel(QWidget):
         header.addWidget(self.close_btn)
         container_layout.addLayout(header)
         
-        # ═══════════════════════════════════════════════════════════════
-        # Appearance Section
-        # ═══════════════════════════════════════════════════════════════
-        container_layout.addWidget(self._create_separator())
+        container_layout.addSpacing(4)
         
-        appearance_header = QLabel("Appearance")
-        appearance_header.setObjectName("sectionHeader")
-        container_layout.addWidget(appearance_header)
+        # ═══════════════════════════════════════════════════════════════
+        # Appearance Section Card
+        # ═══════════════════════════════════════════════════════════════
+        appearance_card, appearance_layout = self._create_section_card("Appearance")
         
-        # Size slider
         self.size_slider = self._create_slider_row(
             "Size", 50, 200, 100, "%", self._on_size_changed
         )
-        container_layout.addLayout(self.size_slider['layout'])
+        appearance_layout.addLayout(self.size_slider['layout'])
         
-        # Opacity slider
         self.opacity_slider = self._create_slider_row(
             "Opacity", 20, 100, 100, "%", self._on_opacity_changed
         )
-        container_layout.addLayout(self.opacity_slider['layout'])
+        appearance_layout.addLayout(self.opacity_slider['layout'])
+        
+        container_layout.addWidget(appearance_card)
         
         # ═══════════════════════════════════════════════════════════════
-        # Visual Effects Section
+        # Visual Effects Section Card
         # ═══════════════════════════════════════════════════════════════
-        container_layout.addWidget(self._create_separator())
+        effects_card, effects_layout = self._create_section_card("Effects")
         
-        effects_header = QLabel("Effects")
-        effects_header.setObjectName("sectionHeader")
-        container_layout.addWidget(effects_header)
-        
-        # Glow toggle
         self.glow_toggle = self._create_toggle_row(
             "Cyan Glow", True, self._on_glow_toggled
         )
-        container_layout.addLayout(self.glow_toggle['layout'])
+        effects_layout.addLayout(self.glow_toggle['layout'])
         
-        # Glow intensity slider
         self.glow_intensity_slider = self._create_slider_row(
             "Glow Power", 10, 100, 60, "%", self._on_glow_intensity_changed
         )
-        container_layout.addLayout(self.glow_intensity_slider['layout'])
+        effects_layout.addLayout(self.glow_intensity_slider['layout'])
         
-        # Animations toggle
         self.animations_toggle = self._create_toggle_row(
             "Animations", True, self._on_animations_toggled
         )
-        container_layout.addLayout(self.animations_toggle['layout'])
+        effects_layout.addLayout(self.animations_toggle['layout'])
+        
+        container_layout.addWidget(effects_card)
         
         # ═══════════════════════════════════════════════════════════════
-        # Behavior Section
+        # Behavior Section Card
         # ═══════════════════════════════════════════════════════════════
-        container_layout.addWidget(self._create_separator())
+        behavior_card, behavior_layout = self._create_section_card("Behavior")
         
-        behavior_header = QLabel("Behavior")
-        behavior_header.setObjectName("sectionHeader")
-        container_layout.addWidget(behavior_header)
-        
-        # Speech bubble toggle
         self.speech_bubble_toggle = self._create_toggle_row(
             "Speech Bubble", True, self._on_speech_bubble_toggled
         )
-        container_layout.addLayout(self.speech_bubble_toggle['layout'])
+        behavior_layout.addLayout(self.speech_bubble_toggle['layout'])
         
-        # Snap to edges toggle
         self.snap_toggle = self._create_toggle_row(
             "Snap to Edges", True, self._on_snap_toggled
         )
-        container_layout.addLayout(self.snap_toggle['layout'])
+        behavior_layout.addLayout(self.snap_toggle['layout'])
         
-        # Expression speed slider
         self.speed_slider = self._create_slider_row(
             "Expression Speed", 50, 200, 100, "%", self._on_speed_changed
         )
-        container_layout.addLayout(self.speed_slider['layout'])
+        behavior_layout.addLayout(self.speed_slider['layout'])
+        
+        container_layout.addWidget(behavior_card)
         
         # ═══════════════════════════════════════════════════════════════
-        # Personality Section
+        # Personality Section Card
         # ═══════════════════════════════════════════════════════════════
-        container_layout.addWidget(self._create_separator())
+        personality_card, personality_layout = self._create_section_card("Personality")
         
-        p7_header = QLabel("Personality")
-        p7_header.setObjectName("sectionHeader")
-        container_layout.addWidget(p7_header)
-        
-        # Personality toggle
         self.personality_toggle = self._create_toggle_row(
             "Enable Personality", True, self._on_personality_toggled
         )
-        container_layout.addLayout(self.personality_toggle['layout'])
+        personality_layout.addLayout(self.personality_toggle['layout'])
         
-        # Time-aware toggle
         self.time_aware_toggle = self._create_toggle_row(
             "Time-Aware Mode", True, self._on_time_aware_toggled
         )
-        container_layout.addLayout(self.time_aware_toggle['layout'])
+        personality_layout.addLayout(self.time_aware_toggle['layout'])
         
-        # Idle timeout slider
         self.idle_timeout_slider = self._create_slider_row(
             "Sleep After", 1, 10, 5, " min", self._on_idle_timeout_changed
         )
-        container_layout.addLayout(self.idle_timeout_slider['layout'])
+        personality_layout.addLayout(self.idle_timeout_slider['layout'])
+        
+        container_layout.addWidget(personality_card)
         
         # End spacer
-        container_layout.addSpacing(10)
+        container_layout.addSpacing(6)
         
         main_layout.addWidget(self.container)
         
         # Add glow effect to container
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(40)
-        shadow.setColor(QColor(0, 180, 255, 120))
-        shadow.setOffset(0, 5)
+        shadow.setBlurRadius(50)
+        shadow.setColor(QColor(0, 160, 255, 90))
+        shadow.setOffset(0, 3)
         self.container.setGraphicsEffect(shadow)
+    
+    def _create_section_card(self, title: str):
+        """Create a section card with header and subtle background."""
+        card = QFrame()
+        card.setObjectName("sectionCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 8, 12, 10)
+        card_layout.setSpacing(4)
+        
+        # Section header label
+        header = QLabel(title)
+        header.setObjectName("sectionHeader")
+        card_layout.addWidget(header)
+        
+        return card, card_layout
     
     def _create_separator(self) -> QFrame:
         """Create a horizontal separator line."""
@@ -281,9 +375,9 @@ class PetSettingsPanel(QWidget):
         }
     
     def _create_toggle_row(self, label: str, default: bool, callback: Callable) -> dict:
-        """Create a labeled toggle switch row with proper alignment."""
+        """Create a labeled toggle switch row with animated ToggleSwitch."""
         layout = QHBoxLayout()
-        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setContentsMargins(0, 3, 0, 3)
         layout.setSpacing(8)
         
         # Label - fixed width matching sliders
@@ -295,11 +389,9 @@ class PetSettingsPanel(QWidget):
         layout.addWidget(lbl)
         layout.addStretch(1)
         
-        # Checkbox styled as toggle
-        toggle = QCheckBox()
-        toggle.setObjectName("settingToggle")
-        toggle.setChecked(default)
-        toggle.stateChanged.connect(lambda state: callback(state == 2))  # Qt.CheckState.Checked = 2
+        # Animated toggle switch
+        toggle = ToggleSwitch(checked=default)
+        toggle.toggled.connect(callback)
         
         layout.addWidget(toggle)
         
@@ -309,50 +401,70 @@ class PetSettingsPanel(QWidget):
         }
     
     def _apply_styling(self):
-        """Apply Nexa futuristic theme styling."""
+        """Apply modern Nexa futuristic theme styling with section cards."""
         self.setStyleSheet("""
             #settingsContainer {
-                background-color: rgba(10, 20, 40, 250);
-                border: 2px solid rgba(0, 180, 255, 150);
-                border-radius: 15px;
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0.2, y2:1,
+                    stop:0 rgba(14, 22, 45, 252),
+                    stop:0.5 rgba(10, 18, 38, 250),
+                    stop:1 rgba(8, 14, 32, 248)
+                );
+                border: 1px solid rgba(0, 180, 255, 0.2);
+                border-radius: 16px;
             }
             
             #panelTitle {
                 color: #00D4FF;
                 padding: 0;
+                letter-spacing: 1px;
             }
             
             #closeButton {
-                background-color: rgba(255, 80, 80, 180);
-                border: none;
-                border-radius: 14px;
-                color: white;
+                background-color: rgba(255, 60, 60, 0.15);
+                border: 1px solid rgba(255, 80, 80, 0.3);
+                border-radius: 15px;
+                color: rgba(255, 140, 140, 0.9);
                 font-weight: bold;
-                font-size: 14px;
+                font-size: 13px;
             }
             
             #closeButton:hover {
-                background-color: rgba(255, 100, 100, 220);
+                background-color: rgba(255, 80, 80, 0.35);
+                border-color: rgba(255, 100, 100, 0.5);
+                color: #FF9999;
+            }
+            
+            #sectionCard {
+                background: rgba(15, 30, 60, 0.5);
+                border: 1px solid rgba(0, 160, 255, 0.08);
+                border-radius: 12px;
+            }
+            
+            #sectionCard:hover {
+                border-color: rgba(0, 180, 255, 0.15);
+                background: rgba(18, 35, 65, 0.55);
             }
             
             #separator {
-                background-color: rgba(0, 150, 220, 60);
+                background-color: rgba(0, 150, 220, 50);
                 max-height: 1px;
                 margin: 8px 0 4px 0;
             }
             
             #settingLabel {
-                color: #E0F0FF;
+                color: rgba(210, 230, 255, 0.85);
                 font-size: 12px;
                 font-family: "Segoe UI", sans-serif;
             }
             
             #sectionHeader {
-                color: #00E0FF;
-                font-size: 12px;
+                color: rgba(0, 210, 255, 0.9);
+                font-size: 11px;
                 font-weight: bold;
                 font-family: "Segoe UI", sans-serif;
-                padding: 4px 0 0 0;
+                letter-spacing: 1px;
+                padding: 2px 0 4px 0;
             }
             
             #valueLabel {
@@ -367,51 +479,31 @@ class PetSettingsPanel(QWidget):
             }
             
             #settingSlider::groove:horizontal {
-                background: rgba(30, 50, 80, 200);
-                height: 6px;
-                border-radius: 3px;
+                background: rgba(25, 45, 75, 200);
+                height: 5px;
+                border-radius: 2px;
             }
             
             #settingSlider::handle:horizontal {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #00E0FF, stop:1 #0080FF);
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 margin: -5px 0;
-                border-radius: 8px;
-                border: 2px solid rgba(255, 255, 255, 100);
+                border-radius: 7px;
+                border: 1.5px solid rgba(255, 255, 255, 80);
             }
             
             #settingSlider::handle:horizontal:hover {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #40F0FF, stop:1 #00A0FF);
+                border: 1.5px solid rgba(255, 255, 255, 120);
             }
             
             #settingSlider::sub-page:horizontal {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #0060FF, stop:1 #00C0FF);
-                border-radius: 3px;
-            }
-            
-            #settingToggle {
-                spacing: 10px;
-            }
-            
-            #settingToggle::indicator {
-                width: 40px;
-                height: 22px;
-                border-radius: 11px;
-            }
-            
-            #settingToggle::indicator:unchecked {
-                background-color: rgba(60, 70, 90, 200);
-                border: 1px solid rgba(100, 110, 130, 150);
-            }
-            
-            #settingToggle::indicator:checked {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #0080FF, stop:1 #00D0FF);
-                border: 1px solid rgba(0, 200, 255, 200);
+                    stop:0 rgba(0, 96, 255, 0.7), stop:1 rgba(0, 192, 255, 0.8));
+                border-radius: 2px;
             }
         """)
     

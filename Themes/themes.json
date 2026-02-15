@@ -50,6 +50,11 @@
       "text": "#00D4FF",
       "visualizer": "#00D4FF",
       "icon": "#00D4FF"
+    },
+    "panels": {
+      "border": "rgba(0, 212, 255, 0.12)",
+      "border_accent": "rgba(0, 212, 255, 0.3)",
+      "glow": "rgba(0, 150, 255, 50)"
     }
   },
   "light": {
@@ -84,12 +89,12 @@
       "close_text": "#CC0000"
     },
     "orb": {
-      "listening": "#005A99",
-      "thinking": "#5B48CE",
-      "responding": "#008855",
-      "idle": "#4477AA",
-      "error": "#BB1122",
-      "border": "rgba(0, 90, 153, 100)"
+      "listening": "#003D6B",
+      "thinking": "#3D2B8C",
+      "responding": "#005533",
+      "idle": "#1E5080",
+      "error": "#991122",
+      "border": "rgba(0, 60, 107, 150)"
     },
     "status": {
       "active": "#0088CC",
@@ -103,6 +108,11 @@
       "text": "#0088CC",
       "visualizer": "#0088CC",
       "icon": "#0088CC"
+    },
+    "panels": {
+      "border": "rgba(0, 100, 180, 0.15)",
+      "border_accent": "rgba(0, 100, 180, 0.35)",
+      "glow": "rgba(0, 100, 180, 40)"
     }
   }
 }
