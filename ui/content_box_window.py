@@ -460,7 +460,7 @@ class ContentBoxWindow(QMainWindow):
         logger.info("\U0001f5d1\ufe0f Text cleared")
 
     def _export_pdf(self):
-        """Export current content as PDF."""
+        """Export current content as PDF, preserving rich formatting."""
         text = self.get_text()
         if not text or not text.strip():
             self.set_status("\u26a0 No content to export", 3000, error=True)
@@ -470,8 +470,12 @@ class ContentBoxWindow(QMainWindow):
             self.set_status("\u26a0 Write some content first", 3000, error=True)
             return
 
-        # Emit the pdf_requested signal so the content_mode_handler creates the PDF
-        self.pdf_requested.emit("simple_text", "", text)
+        # Send HTML content for rich formatting preservation
+        html = self.get_html()
+        content = html if html and html.strip() else text
+
+        # Use formatted_paragraphs for best output quality
+        self.pdf_requested.emit("formatted_paragraphs", "", content)
         self.set_status("\U0001f4c4 Exporting PDF...", 3000)
 
     # ═══════════════════════════════════════════

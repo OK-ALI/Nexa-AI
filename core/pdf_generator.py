@@ -148,67 +148,260 @@ class PDFGenerator:
         
         return story
     
+    # --- HTML Processing Methods ---
+    
+    def _clean_inline_html(self, html: str) -> str:
+        """
+        Clean inline HTML tags to ReportLab-compatible markup.
+        Handles both web editor output and QTextEdit HTML.
+        
+        Supported ReportLab tags: <b>, <i>, <u>, <font face/color/size>, <br/>
+        """
+        # --- Font tag normalization ---
+        # Convert <font style="font-size: Xpt;"> to <font size="X">
+        # Also preserve face and color attributes on the same tag
+        def normalize_font_tag(match):
+            attrs_str = match.group(1)
+            parts = []
+            
+            # Extract font-size from style attribute
+            size_m = re.search(r'font-size:\s*(\d+(?:\.\d+)?)pt', attrs_str)
+            if size_m:
+                parts.append(f'size="{int(float(size_m.group(1)))}"')
+            
+            # Extract face attribute
+            face_m = re.search(r'face="([^"]*)"', attrs_str)
+            if face_m:
+                parts.append(f'face="{face_m.group(1)}"')
+            
+            # Extract color attribute
+            color_m = re.search(r'color="([^"]*)"', attrs_str)
+            if color_m:
+                parts.append(f'color="{color_m.group(1)}"')
+            
+            if parts:
+                return f'<font {" ".join(parts)}>'
+            return ''
+        
+        html = re.sub(r'<font\b([^>]*)>', normalize_font_tag, html)
+        
+        # --- Qt/Span-based formatting conversion ---
+        # Bold: font-weight:600/700/bold
+        html = re.sub(
+            r'<span[^>]*font-weight:\s*(?:600|700|bold)[^>]*>(.*?)</span>',
+            r'<b>\1</b>', html, flags=re.DOTALL
+        )
+        # Italic: font-style:italic
+        html = re.sub(
+            r'<span[^>]*font-style:\s*italic[^>]*>(.*?)</span>',
+            r'<i>\1</i>', html, flags=re.DOTALL
+        )
+        # Underline: text-decoration: underline
+        html = re.sub(
+            r'<span[^>]*text-decoration:\s*underline[^>]*>(.*?)</span>',
+            r'<u>\1</u>', html, flags=re.DOTALL
+        )
+        
+        # --- Color conversion ---
+        # Span with hex color -> <font color="">
+        def span_color_to_font(match):
+            style = match.group(1)
+            content = match.group(2)
+            hex_m = re.search(r'color:\s*(#[0-9a-fA-F]{3,6})', style)
+            rgb_m = re.search(r'color:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)', style)
+            if hex_m:
+                return f'<font color="{hex_m.group(1)}">{content}</font>'
+            elif rgb_m:
+                r, g, b = int(rgb_m.group(1)), int(rgb_m.group(2)), int(rgb_m.group(3))
+                return f'<font color="#{r:02x}{g:02x}{b:02x}">{content}</font>'
+            return content
+        
+        html = re.sub(r'<span\s+style="([^"]*)">(.*?)</span>', span_color_to_font, html, flags=re.DOTALL)
+        
+        # --- Cleanup ---
+        html = re.sub(r'</?span[^>]*>', '', html)           # Strip remaining spans
+        html = re.sub(r'</?(?:div|p)[^>]*>', '', html)      # Strip block tags (handled elsewhere)
+        html = re.sub(r'<font\s*>(.*?)</font>', r'\1', html, flags=re.DOTALL)  # Remove empty font tags
+        html = re.sub(r'<br\s*/?>', '<br/>', html)          # Normalize <br> variants
+        html = re.sub(r'[ \t]+', ' ', html)                 # Normalize spaces (keep <br/>)
+        
+        return html.strip()
+    
     def _parse_html_to_reportlab(self, html: str) -> str:
         """
-        Convert QTextEdit HTML to ReportLab-compatible markup.
+        Convert HTML to ReportLab-compatible flat markup string.
+        Handles both web editor innerHTML and QTextEdit HTML.
+        
+        For richer conversion (alignment, lists), use _convert_html_to_flowables() instead.
+        """
+        # Remove document wrappers
+        html = re.sub(r'<!DOCTYPE[^>]*>', '', html, flags=re.DOTALL)
+        html = re.sub(r'<html[^>]*>.*?<body[^>]*>', '', html, flags=re.DOTALL)
+        html = re.sub(r'</body>\s*</html>', '', html, flags=re.DOTALL)
+        
+        # Convert list items to bullet text before stripping list tags
+        html = re.sub(r'<li[^>]*>(.*?)</li>', '• \\1<br/>', html, flags=re.DOTALL)
+        html = re.sub(r'</?(?:ul|ol)[^>]*>', '', html)
+        
+        # Convert paragraph/div endings to line breaks
+        html = re.sub(r'</(?:div|p)>', '<br/>', html)
+        html = re.sub(r'<(?:div|p)[^>]*>', '', html)
+        
+        # Clean inline formatting to ReportLab-compatible tags
+        html = self._clean_inline_html(html)
+        
+        # Collapse excessive <br/> sequences
+        html = re.sub(r'(?:<br/>\s*){3,}', '<br/><br/>', html)
+        
+        # Final whitespace cleanup
+        html = re.sub(r'\s+', ' ', html).strip()
+        
+        logger.debug(f"PDF HTML parsed (flat), length: {len(html)}")
+        return html
+    
+    def _detect_html_content(self, text: str) -> bool:
+        """Detect whether text contains HTML markup (web editor or QTextEdit)."""
+        if not text:
+            return False
+        t = text.strip()
+        # QTextEdit full-document wrappers
+        if t.startswith('<!DOCTYPE') or t.startswith('<html'):
+            return True
+        # Web editor block/inline tags
+        if re.search(r'<(?:div|p|ul|ol|li|br|font|b|i|u|h[1-6]|span)\b', t, re.IGNORECASE):
+            return True
+        return False
+    
+    def _convert_html_to_flowables(self, html: str, base_style, styles) -> list:
+        """
+        Convert web editor HTML into structured ReportLab flowables.
+        Preserves alignment, lists, font sizes, colors, and inline formatting.
         
         Args:
-            html: HTML string from QTextEdit
+            html: Raw innerHTML from web editor or QTextEdit HTML
+            base_style: Default ParagraphStyle for body text
+            styles: ReportLab stylesheet
             
         Returns:
-            ReportLab-compatible text with formatting tags
+            List of ReportLab flowables
         """
-        # Remove Qt-specific HTML wrapper
-        html = re.sub(r'<!DOCTYPE.*?>', '', html, flags=re.DOTALL)
-        html = re.sub(r'<html>.*?<body[^>]*>', '', html, flags=re.DOTALL)
-        html = re.sub(r'</body>.*?</html>', '', html, flags=re.DOTALL)
+        align_map = {
+            'left': TA_LEFT,
+            'center': TA_CENTER,
+            'right': TA_RIGHT,
+            'justify': TA_JUSTIFY,
+        }
         
-        # Convert Qt font-weight to bold
-        html = re.sub(r'<span style="[^"]*font-weight:600[^"]*">(.*?)</span>', r'<b>\1</b>', html, flags=re.DOTALL)
-        html = re.sub(r'<span style="[^"]*font-weight:700[^"]*">(.*?)</span>', r'<b>\1</b>', html, flags=re.DOTALL)
+        story = []
+        _style_counter = [0]  # Mutable counter for unique style names
         
-        # Convert Qt font-style to italic
-        html = re.sub(r'<span style="[^"]*font-style:italic[^"]*">(.*?)</span>', r'<i>\1</i>', html, flags=re.DOTALL)
+        def make_style(parent, **kwargs):
+            """Create a uniquely-named ParagraphStyle."""
+            _style_counter[0] += 1
+            return ParagraphStyle(f'Auto_{_style_counter[0]}', parent=parent, **kwargs)
         
-        # Convert Qt text-decoration to underline
-        html = re.sub(r'<span style="[^"]*text-decoration: underline[^"]*">(.*?)</span>', r'<u>\1</u>', html, flags=re.DOTALL)
-        
-        # Extract font colors - handle both hex and rgb formats
-        def replace_color(match):
-            color = match.group(1)
-            content = match.group(2)
-            logger.debug(f"PDF Color extraction: {color} for content: {content[:50]}...")
-            return f'<font color="{color}">{content}</font>'
-        
-        # Match hex colors like #FF0000 or #ff0000
-        html = re.sub(r'<span style="[^"]*color:\s*(#[0-9a-fA-F]{6})[^"]*">(.*?)</span>', replace_color, html, flags=re.DOTALL)
-        
-        # Match RGB colors like rgb(255, 0, 0) - convert to hex
-        def replace_rgb_color(match):
-            r = int(match.group(1))
-            g = int(match.group(2))
-            b = int(match.group(3))
-            content = match.group(4)
-            hex_color = f'#{r:02x}{g:02x}{b:02x}'
-            logger.debug(f"PDF RGB to hex: rgb({r},{g},{b}) -> {hex_color}")
-            return f'<font color="{hex_color}">{content}</font>'
-        
-        html = re.sub(r'<span style="[^"]*color:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)[^"]*">(.*?)</span>', replace_rgb_color, html, flags=re.DOTALL)
-        
-        # Clean up paragraph tags
-        html = re.sub(r'<p[^>]*>', '', html)
-        html = re.sub(r'</p>', '<br/>', html)
-        
-        # Remove remaining span tags
-        html = re.sub(r'<span[^>]*>', '', html)
-        html = re.sub(r'</span>', '', html)
-        
-        # Clean up extra whitespace
-        html = re.sub(r'\s+', ' ', html)
+        # Clean document wrappers
+        html = re.sub(r'<!DOCTYPE[^>]*>', '', html, flags=re.DOTALL)
+        html = re.sub(r'<html[^>]*>.*?<body[^>]*>', '', html, flags=re.DOTALL)
+        html = re.sub(r'</body>\s*</html>', '', html, flags=re.DOTALL)
+        html = re.sub(r'<br\s*/?>', '<br/>', html)
         html = html.strip()
         
-        logger.debug(f"PDF HTML parsed, length: {len(html)}")
-        return html
+        if not html:
+            return story
+        
+        # Split into block-level segments: lists vs everything else
+        segments = re.split(r'(<(?:ul|ol)\b[^>]*>.*?</(?:ul|ol)>)', html, flags=re.DOTALL)
+        
+        for segment in segments:
+            segment = segment.strip()
+            if not segment:
+                continue
+            
+            # --- Unordered list ---
+            ul_match = re.match(r'<ul\b[^>]*>(.*?)</ul>', segment, re.DOTALL)
+            if ul_match:
+                items = re.findall(r'<li[^>]*>(.*?)</li>', ul_match.group(1), re.DOTALL)
+                for item_html in items:
+                    clean = self._clean_inline_html(item_html)
+                    if clean.strip():
+                        bstyle = make_style(base_style, leftIndent=30, bulletIndent=12, spaceAfter=4)
+                        story.append(Paragraph(clean, bstyle, bulletText='\u2022'))
+                story.append(Spacer(1, 0.1 * inch))
+                continue
+            
+            # --- Ordered list ---
+            ol_match = re.match(r'<ol\b[^>]*>(.*?)</ol>', segment, re.DOTALL)
+            if ol_match:
+                items = re.findall(r'<li[^>]*>(.*?)</li>', ol_match.group(1), re.DOTALL)
+                for idx, item_html in enumerate(items, 1):
+                    clean = self._clean_inline_html(item_html)
+                    if clean.strip():
+                        nstyle = make_style(base_style, leftIndent=30, bulletIndent=12, spaceAfter=4)
+                        story.append(Paragraph(clean, nstyle, bulletText=f'{idx}.'))
+                story.append(Spacer(1, 0.1 * inch))
+                continue
+            
+            # --- Regular content: split by <div> / <p> blocks ---
+            blocks = re.split(r'(?:</div>|</p>)', segment)
+            
+            for block in blocks:
+                block = block.strip()
+                if not block:
+                    continue
+                
+                # Extract alignment from opening div/p style
+                align = base_style.alignment
+                align_m = re.search(r'text-align:\s*(left|center|right|justify)', block)
+                if align_m:
+                    align = align_map.get(align_m.group(1), base_style.alignment)
+                
+                # Remove opening div/p tag
+                block = re.sub(r'<(?:div|p)\b[^>]*>', '', block)
+                
+                # Split by <br/> for line breaks within the block
+                lines = block.split('<br/>')
+                
+                for line in lines:
+                    clean = self._clean_inline_html(line)
+                    if not clean.strip():
+                        continue
+                    
+                    if align != base_style.alignment:
+                        pstyle = make_style(base_style, alignment=align)
+                    else:
+                        pstyle = base_style
+                    
+                    story.append(Paragraph(clean, pstyle))
+                
+                # Small gap between blocks
+                if story and not isinstance(story[-1], Spacer):
+                    story.append(Spacer(1, 0.06 * inch))
+        
+        # Remove trailing spacer
+        if story and isinstance(story[-1], Spacer):
+            story.pop()
+        
+        return story
+    
+    def _add_page_number(self, canvas_obj, doc):
+        """Draw page number footer on each page."""
+        canvas_obj.saveState()
+        
+        page_num = canvas_obj.getPageNumber()
+        page_w = self.page_size[0]
+        
+        # Page number at bottom center
+        canvas_obj.setFont('Helvetica', 9)
+        canvas_obj.setFillColor(colors.HexColor('#999999'))
+        canvas_obj.drawCentredString(page_w / 2.0, 0.4 * inch, f"Page {page_num}")
+        
+        # Subtle branding at bottom-right
+        canvas_obj.setFont('Helvetica', 7)
+        canvas_obj.setFillColor(colors.HexColor('#CCCCCC'))
+        canvas_obj.drawRightString(page_w - self.margin, 0.4 * inch, "Generated by Nexa AI")
+        
+        canvas_obj.restoreState()
     
     def create_pdf(
         self,
@@ -279,7 +472,7 @@ class PDFGenerator:
     # --- PDF Creation Methods ---
     
     def _create_simple_text_pdf(self, text: str, output_path: Path, title: Optional[str], metadata: Optional[dict] = None):
-        """Create simple text PDF with basic formatting."""
+        """Create simple text PDF with basic formatting and page numbers."""
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=self.page_size,
@@ -289,47 +482,37 @@ class PDFGenerator:
             bottomMargin=self.margin
         )
         
-        # Get styles
         styles = getSampleStyleSheet()
-        
-        # Build content
         story = []
         
-        # Add credentials header if metadata provided
         if metadata:
             story.extend(self._create_credentials_header(styles, metadata, title))
         elif title:
-            # Fallback: just add title if no metadata
             story.append(Paragraph(title, styles['Title']))
             story.append(Spacer(1, 0.3 * inch))
         
-        # Check if text is HTML (from QTextEdit)
-        is_html = text.strip().startswith('<!DOCTYPE') or text.strip().startswith('<html')
+        # Detect HTML content (web editor or QTextEdit)
+        is_html = self._detect_html_content(text)
         
         if is_html:
-            # Parse HTML and preserve formatting
             parsed_text = self._parse_html_to_reportlab(text)
-            # Split by line breaks
-            paragraphs = parsed_text.split('<br/>')
+            paragraphs = [p for p in parsed_text.split('<br/>') if p.strip()]
         else:
-            # Plain text - split by paragraphs
             paragraphs = text.split('\n\n')
         
-        # Add text content
         for para in paragraphs:
-            if para.strip():
-                # Clean paragraph
-                para_clean = para.strip()
-                if not is_html:
-                    para_clean = para_clean.replace('\n', ' ')
-                story.append(Paragraph(para_clean, styles['Normal']))
-                story.append(Spacer(1, 0.15 * inch))
+            para_clean = para.strip()
+            if not para_clean:
+                continue
+            if not is_html:
+                para_clean = para_clean.replace('\n', ' ')
+            story.append(Paragraph(para_clean, styles['Normal']))
+            story.append(Spacer(1, 0.15 * inch))
         
-        # Build PDF
-        doc.build(story)
+        doc.build(story, onFirstPage=self._add_page_number, onLaterPages=self._add_page_number)
     
     def _create_bullets_pdf(self, text: str, output_path: Path, title: Optional[str], metadata: Optional[dict] = None):
-        """Create PDF with proper bullet point formatting and sections."""
+        """Create PDF with bullet points, section headings, and page numbers."""
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=self.page_size,
@@ -339,51 +522,35 @@ class PDFGenerator:
             bottomMargin=self.margin
         )
         
-        # Get styles
         styles = getSampleStyleSheet()
         
-        # Create custom bullet style with proper indentation
         bullet_style = ParagraphStyle(
-            'Bullet',
-            parent=styles['Normal'],
-            fontSize=11,
-            leading=16,
-            leftIndent=30,  # Indent the bullet text
-            bulletIndent=10,  # Position of bullet symbol
+            'Bullet', parent=styles['Normal'],
+            fontSize=11, leading=16,
+            leftIndent=30, bulletIndent=10,
             spaceAfter=8,
-            bulletFontName='Helvetica',
-            bulletFontSize=11
+            bulletFontName='Helvetica', bulletFontSize=11
         )
-        
-        # Create heading style for sections
         heading_style = ParagraphStyle(
-            'SectionHeading',
-            parent=styles['Heading2'],
-            fontSize=13,
-            textColor=colors.HexColor('#9333EA'),
-            spaceAfter=10,
-            spaceBefore=16,
-            fontName='Helvetica-Bold'
+            'SectionHeading', parent=styles['Heading2'],
+            fontSize=13, textColor=colors.HexColor('#9333EA'),
+            spaceAfter=10, spaceBefore=16, fontName='Helvetica-Bold'
         )
         
-        # Build content
         story = []
         
-        # Add credentials header if metadata provided
         if metadata:
             story.extend(self._create_credentials_header(styles, metadata, title))
         elif title:
-            # Fallback: just add title if no metadata
             story.append(Paragraph(title, styles['Title']))
             story.append(Spacer(1, 0.3 * inch))
         
-        # Check if text is HTML (from QTextEdit) and parse if needed
-        is_html = text.strip().startswith('<!DOCTYPE') or text.strip().startswith('<html')
+        # Detect and parse HTML content
+        is_html = self._detect_html_content(text)
         if is_html:
             text = self._parse_html_to_reportlab(text)
         
-        # Process text into sections and bullet points
-        # Split by double newlines for sections
+        # Split into sections
         sections = text.split('\n\n') if not is_html else text.split('<br/><br/>')
         
         for section_idx, section in enumerate(sections):
@@ -391,49 +558,35 @@ class PDFGenerator:
             if not section:
                 continue
             
-            lines = section.split('\n')
+            # Split lines appropriately for HTML vs plain text
+            lines = section.split('<br/>') if is_html else section.split('\n')
             
-            # Check if first line looks like a heading
             first_line = lines[0].strip()
             is_heading = (
-                len(first_line) < 80 and 
-                len(lines) > 1 and
+                len(first_line) < 80 and len(lines) > 1 and
                 (first_line.endswith(':') or first_line.isupper() or len(first_line.split()) <= 5)
             )
             
             if is_heading:
-                # Add heading
                 heading_text = first_line.rstrip(':')
                 story.append(Paragraph(f"<b>{heading_text}</b>", heading_style))
-                lines = lines[1:]  # Process remaining lines as bullets
+                lines = lines[1:]
             
-            # Process bullets
             for line in lines:
                 line = line.strip()
                 if not line:
                     story.append(Spacer(1, 0.05 * inch))
                     continue
-                
-                # Remove existing bullet markers (*, -, •, ·, →)
-                line_clean = line.lstrip('•-*·→ ')
-                
-                # Use bulletText parameter for proper bullet rendering
-                bullet_para = Paragraph(
-                    line_clean,
-                    bullet_style,
-                    bulletText='•'
-                )
-                story.append(bullet_para)
+                line_clean = line.lstrip('\u2022-*\u00b7\u2192 ')
+                story.append(Paragraph(line_clean, bullet_style, bulletText='\u2022'))
             
-            # Add space between sections
             if section_idx < len(sections) - 1:
                 story.append(Spacer(1, 0.15 * inch))
         
-        # Build PDF
-        doc.build(story)
+        doc.build(story, onFirstPage=self._add_page_number, onLaterPages=self._add_page_number)
     
     def _create_formatted_pdf(self, text: str, output_path: Path, title: Optional[str], metadata: Optional[dict] = None):
-        """Create PDF with formatted paragraphs and better typography."""
+        """Create PDF with rich formatting, alignment, lists, and page numbers."""
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=self.page_size,
@@ -443,93 +596,75 @@ class PDFGenerator:
             bottomMargin=self.margin
         )
         
-        # Get styles
         styles = getSampleStyleSheet()
         
-        # Create custom paragraph style with justified text
         body_style = ParagraphStyle(
-            'CustomBody',
-            parent=styles['Normal'],
-            fontSize=11,
-            leading=16,  # Line spacing
-            alignment=TA_JUSTIFY,
-            spaceAfter=12
+            'CustomBody', parent=styles['Normal'],
+            fontSize=11, leading=16,
+            alignment=TA_LEFT, spaceAfter=8
         )
-        
-        # Create heading style
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#9333EA'),  # Purple theme
-            spaceAfter=10,
-            spaceBefore=16
+            'CustomHeading', parent=styles['Heading2'],
+            fontSize=14, textColor=colors.HexColor('#9333EA'),
+            spaceAfter=10, spaceBefore=16
         )
         
-        # Build content
         story = []
         
-        # Add credentials header if metadata provided
         if metadata:
             story.extend(self._create_credentials_header(styles, metadata, title))
         elif title:
-            # Fallback: just add title if no metadata
             story.append(Paragraph(title, styles['Title']))
             story.append(Spacer(1, 0.3 * inch))
         
-        # Check if text is HTML (from QTextEdit) and parse if needed
-        is_html = text.strip().startswith('<!DOCTYPE') or text.strip().startswith('<html')
+        # Detect content type
+        is_html = self._detect_html_content(text)
+        
         if is_html:
-            text = self._parse_html_to_reportlab(text)
-        
-        # Process text intelligently
-        sections = text.split('\n\n') if not is_html else text.split('<br/><br/>')
-        
-        for section in sections:
-            section = section.strip()
-            if not section:
-                continue
+            # Use rich HTML-to-flowables converter for full formatting fidelity
+            flowables = self._convert_html_to_flowables(text, body_style, styles)
+            story.extend(flowables)
+        else:
+            # Plain text fallback with heading/bullet detection
+            sections = text.split('\n\n')
             
-            # Check if this looks like a heading (short, possibly all caps or ends with :)
-            lines = section.split('\n')
-            first_line = lines[0].strip()
-            
-            is_heading = (
-                len(first_line) < 60 and
-                len(lines) == 1 and
-                (first_line.isupper() or first_line.endswith(':'))
-            )
-            
-            if is_heading:
-                # Add as heading
-                heading_text = first_line.rstrip(':')
-                story.append(Paragraph(f"<b>{heading_text}</b>", heading_style))
-            else:
-                # Check if section contains bullet points
-                has_bullets = any(line.strip().startswith(('•', '-', '*', '·', '→')) for line in lines)
+            for section in sections:
+                section = section.strip()
+                if not section:
+                    continue
                 
-                if has_bullets:
-                    # Process as bulleted list
-                    bullet_style = ParagraphStyle(
-                        'FormattedBullet',
-                        parent=body_style,
-                        leftIndent=20,
-                        bulletIndent=10
+                lines = section.split('\n')
+                first_line = lines[0].strip()
+                
+                is_heading = (
+                    len(first_line) < 60 and len(lines) == 1 and
+                    (first_line.isupper() or first_line.endswith(':'))
+                )
+                
+                if is_heading:
+                    heading_text = first_line.rstrip(':')
+                    story.append(Paragraph(f"<b>{heading_text}</b>", heading_style))
+                else:
+                    has_bullets = any(
+                        line.strip().startswith(('\u2022', '-', '*', '\u00b7', '\u2192'))
+                        for line in lines
                     )
                     
-                    for line in lines:
-                        line = line.strip()
-                        if line:
-                            # Clean bullet
-                            line_clean = line.lstrip('•-*·→ ')
-                            story.append(Paragraph(f"• {line_clean}", bullet_style))
-                else:
-                    # Regular paragraph - clean and format
-                    para_text = ' '.join(line.strip() for line in lines if line.strip())
-                    story.append(Paragraph(para_text, body_style))
+                    if has_bullets:
+                        bullet_style = ParagraphStyle(
+                            'FormattedBullet', parent=body_style,
+                            leftIndent=30, bulletIndent=12, spaceAfter=4
+                        )
+                        for line in lines:
+                            line = line.strip()
+                            if line:
+                                line_clean = line.lstrip('\u2022-*\u00b7\u2192 ')
+                                story.append(Paragraph(line_clean, bullet_style, bulletText='\u2022'))
+                    else:
+                        para_text = ' '.join(l.strip() for l in lines if l.strip())
+                        story.append(Paragraph(para_text, body_style))
         
-        # Build PDF
-        doc.build(story)
+        doc.build(story, onFirstPage=self._add_page_number, onLaterPages=self._add_page_number)
     
     # --- Helper Methods ---
     
