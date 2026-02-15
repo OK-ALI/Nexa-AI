@@ -505,6 +505,46 @@ function syncToolbar() {
     _setActive('btnAlignJ',    document.queryCommandState('justifyFull'));
     _setActive('btnBullet',    document.queryCommandState('insertUnorderedList'));
     _setActive('btnNumber',    document.queryCommandState('insertOrderedList'));
+
+    // ── Sync font family dropdown ──
+    var fontName = document.queryCommandValue('fontName');
+    if (fontName) {
+        // Strip quotes that some browsers add
+        fontName = fontName.replace(/['"]/g, '');
+        var selFont = document.getElementById('selFont');
+        for (var i = 0; i < selFont.options.length; i++) {
+            if (selFont.options[i].value.toLowerCase() === fontName.toLowerCase()) {
+                selFont.selectedIndex = i;
+                break;
+            }
+        }
+    }
+
+    // ── Sync font size dropdown ──
+    // Try to read current computed font size from the selection
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && sel.focusNode) {
+        var node = sel.focusNode;
+        if (node.nodeType === 3) node = node.parentNode; // text node → element
+        if (node && node.style && node.style.fontSize) {
+            var ptMatch = node.style.fontSize.match(/(\d+)pt/);
+            if (ptMatch) {
+                _currentSize = parseInt(ptMatch[1]);
+                document.getElementById('selSize').value = String(_currentSize);
+            }
+        } else if (node) {
+            // Fallback: compute from computed style
+            var computed = window.getComputedStyle(node).fontSize;
+            if (computed) {
+                var pxVal = parseFloat(computed);
+                var ptVal = Math.round(pxVal * 72 / 96);
+                if (ptVal >= 8 && ptVal <= 24) {
+                    _currentSize = ptVal;
+                    document.getElementById('selSize').value = String(ptVal);
+                }
+            }
+        }
+    }
 }
 
 function _setActive(id, active) {

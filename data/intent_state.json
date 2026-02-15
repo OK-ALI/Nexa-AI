@@ -1,13 +1,4 @@
 {
-  "pending": {
-    "intent": "proactive_suggestion",
-    "data_needed": "user_response",
-    "collected_data": {},
-    "original_command": "\"Hey! It's almost 6 PM - how about I put on some soothing jazz to help you unwind?\"",
-    "clarification_question": "\"Hey! It's almost 6 PM - how about I put on some soothing jazz to help you unwind?\"",
-    "created_at": "2026-02-15T18:51:52.861276",
-    "expires_at": "2026-02-15T18:53:52.861276",
-    "is_proactive": false
-  },
-  "saved_at": "2026-02-15T18:51:52.861276"
+  "pending": null,
+  "saved_at": "2026-02-15T19:57:34.523918"
 }

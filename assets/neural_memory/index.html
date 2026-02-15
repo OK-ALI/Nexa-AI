@@ -85,6 +85,8 @@ function resize() {
 }
 window.addEventListener('resize', function() { resize(); initStars(); });
 resize();
+smoothMouseX = centerX;
+smoothMouseY = centerY;
 
 // ── Color Palette ────────────────────────────────────────
 var TYPE_COLORS = {
@@ -100,6 +102,7 @@ var connections = [];
 var stars = [];
 var time = 0;
 var mouseX = -9999, mouseY = -9999;
+var smoothMouseX, smoothMouseY;  // smoothed parallax target (always valid)
 var hoveredNode = null;
 var selectedNode = null;
 var activeFilter = null;        // null = all
@@ -152,9 +155,10 @@ function NeuralNode(data, index, total) {
     this.content = data.content || data.user_message || data.fact || data.action || 'Memory';
     this.importance = data.importance || 0.5;
 
-    // Position — spiral layout
-    var angle = index * 0.618 * Math.PI * 2;
-    var radius = 60 + index * 12;
+    // Position — spiral layout (constrained to visible area)
+    var angle = index * 2.399963;  // golden angle in radians
+    var maxSpread = Math.min(W, H) * 0.38;
+    var radius = 30 + Math.sqrt(index / Math.max(total, 1)) * maxSpread;
     this.x = centerX + Math.cos(angle) * radius;
     this.y = centerY + Math.sin(angle) * radius;
     this.z = (Math.random() - 0.5) * 2; // parallax depth
@@ -192,11 +196,11 @@ function NeuralNode(data, index, total) {
 }
 
 NeuralNode.prototype.displayX = function() {
-    var px = (mouseX - centerX) * this.z * 0.03;
+    var px = (smoothMouseX - centerX) * this.z * 0.03;
     return this.x + px;
 };
 NeuralNode.prototype.displayY = function() {
-    var py = (mouseY - centerY) * this.z * 0.03;
+    var py = (smoothMouseY - centerY) * this.z * 0.03;
     return this.y + py;
 };
 NeuralNode.prototype.radius = function() {
@@ -540,6 +544,7 @@ canvas.addEventListener('mousemove', function(e) {
 
 canvas.addEventListener('mouseleave', function() {
     mouseX = -9999; mouseY = -9999;
+    // smoothMouseX/Y will lerp back to center in animate()
     hoveredNode = null;
     hideTooltip();
 });
@@ -586,6 +591,12 @@ function animate(now) {
     var dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
     time += dt;
+
+    // Smooth parallax mouse — lerp toward actual mouse or center when off-canvas
+    var targetMX = (mouseX < -999) ? centerX : mouseX;
+    var targetMY = (mouseY < -999) ? centerY : mouseY;
+    smoothMouseX += (targetMX - smoothMouseX) * 0.12;
+    smoothMouseY += (targetMY - smoothMouseY) * 0.12;
 
     // Physics at ~30fps
     physicsAccum += dt;

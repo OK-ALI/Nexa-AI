@@ -286,7 +286,7 @@ class ContentBoxWindow(QMainWindow):
         return section
 
     def _create_toolbar(self) -> QHBoxLayout:
-        """Create toolbar with Copy / Clear buttons."""
+        """Create toolbar with Copy / Clear / Export buttons."""
         from ui.music_indicator import get_icon_manager
         icon_mgr = get_icon_manager()
 
@@ -308,6 +308,14 @@ class ContentBoxWindow(QMainWindow):
         self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clear_btn.clicked.connect(self._clear_text)
         layout.addWidget(self.clear_btn)
+
+        self.export_btn = QPushButton(" Export PDF")
+        self.export_btn.setIcon(icon_mgr.get_icon('export', 18))
+        self.export_btn.setIconSize(QSize(18, 18))
+        self.export_btn.setFixedSize(130, 36)
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.clicked.connect(self._export_pdf)
+        layout.addWidget(self.export_btn)
 
         layout.addStretch()
         return layout
@@ -451,6 +459,21 @@ class ContentBoxWindow(QMainWindow):
         self._cached_words = 0
         logger.info("\U0001f5d1\ufe0f Text cleared")
 
+    def _export_pdf(self):
+        """Export current content as PDF."""
+        text = self.get_text()
+        if not text or not text.strip():
+            self.set_status("\u26a0 No content to export", 3000, error=True)
+            return
+
+        if self._cached_words < 1:
+            self.set_status("\u26a0 Write some content first", 3000, error=True)
+            return
+
+        # Emit the pdf_requested signal so the content_mode_handler creates the PDF
+        self.pdf_requested.emit("simple_text", "", text)
+        self.set_status("\U0001f4c4 Exporting PDF...", 3000)
+
     # ═══════════════════════════════════════════
     # Theme
     # ═══════════════════════════════════════════
@@ -525,6 +548,7 @@ class ContentBoxWindow(QMainWindow):
         """
         self.copy_btn.setStyleSheet(toolbar_style)
         self.clear_btn.setStyleSheet(toolbar_style)
+        self.export_btn.setStyleSheet(toolbar_style)
 
         self.word_count_label.setStyleSheet(
             f"color: {text_secondary}; background: transparent;"
