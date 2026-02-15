@@ -22,6 +22,22 @@ from .listener import AudioListener
 from .tts import TTSEngine
 from .llm_manager import LLMManager, LLMMode
 
+# Optional: Coqui TTS for cloned voice
+try:
+    from .tts_coqui import CoquiTTSEngine
+    COQUI_AVAILABLE = True
+except ImportError:
+    COQUI_AVAILABLE = False
+
+# Import refactored utility modules
+from .text_processing import TextProcessor, get_text_processor
+from .function_validation import FunctionValidator, get_function_validator
+from .command_detection import CommandDetector, get_command_detector
+from .clarification_handler import ClarificationHandler, get_clarification_handler
+from .response_cache import ResponseCache, get_response_cache
+from .conversation_history import ConversationHistoryBuilder, get_history_builder
+from .reference_resolver import ReferenceResolver, get_reference_resolver
+
 # Import input validator (optional, can be disabled via feature flag)
 try:
     from .input_validator import InputValidator
@@ -54,6 +70,35 @@ try:
 except ImportError:
     SPEAKER_ENROLLMENT_AVAILABLE = False
     SpeakerEnrollment = None
+
+# Import Companion Mode - Phase 28: Thinking Feedback (optional)
+try:
+    from .companion import ThinkingFeedback, init_thinking_feedback
+    THINKING_FEEDBACK_AVAILABLE = True
+except ImportError:
+    THINKING_FEEDBACK_AVAILABLE = False
+    ThinkingFeedback = None
+    init_thinking_feedback = None
+
+# Import Companion Mode - Phase 29: Proactive Engagement (optional)
+try:
+    from .companion import (
+        IdleMonitor, IdleState, init_idle_monitor, get_idle_monitor,
+        ProactiveEngine, init_proactive_engine, get_proactive_engine,
+        PatternLearner, init_pattern_learner, get_pattern_learner
+    )
+    PROACTIVE_AVAILABLE = True
+except ImportError:
+    PROACTIVE_AVAILABLE = False
+    IdleMonitor = None
+    init_idle_monitor = None
+    get_idle_monitor = None
+    ProactiveEngine = None
+    init_proactive_engine = None
+    get_proactive_engine = None
+    PatternLearner = None
+    init_pattern_learner = None
+    get_pattern_learner = None
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +137,10 @@ class NexaBrain:
         self.gpu_monitor = None  # Will be set by main.py via set_gpu_monitor()
         self.executor = CommandExecutor(config, self.context_manager, self.gpu_monitor)
         self.listener = AudioListener(config)
-        self.tts = TTSEngine(config)
+        
+        # Initialize TTS Engine based on config
+        # Options: 'kokoro' (default) or 'coqui' (cloned voice, better emotions)
+        self.tts = self._create_tts_engine(config)
         
         # Set brain reference in executor (for Content Mode access)
         self.executor.brain = self
@@ -106,6 +154,18 @@ class NexaBrain:
         
         # Register LLM mode change callback (for verbal announcements)
         self.llm_manager.register_mode_callback(self._on_llm_mode_changed)
+        
+        # Initialize refactored utility modules
+        self.text_processor = get_text_processor()
+        self.function_validator = get_function_validator(self.executor, self.config)
+        self.command_detector = get_command_detector()
+        self.clarification_handler = get_clarification_handler(self.context_manager, self.executor)
+        # Pass IntentState to response_cache for unified follow-up detection
+        self.response_cache = get_response_cache(
+            intent_state=self.context_manager.intent_state
+        )
+        self.history_builder = get_history_builder()
+        self.reference_resolver = get_reference_resolver(self.context_manager, self.executor)
         
         # Initialize speaker enrollment (optional, for voice enrollment)
         self.speaker_enrollment = None
@@ -140,6 +200,82 @@ class NexaBrain:
             logger.info("✅ Dynamic preprocessor enabled (multi-step, pronouns, ambiguity detection)")
         else:
             logger.info("⚠️ Dynamic preprocessor disabled")
+        
+        # Initialize Companion Mode - Phase 28: Thinking Feedback
+        # Provides immediate acknowledgment ("On it!", "Got it!") when processing starts
+        # Feature flag: Set to False to disable thinking feedback
+        self.enable_thinking_feedback = True
+        self.thinking_feedback = None
+        if THINKING_FEEDBACK_AVAILABLE and self.enable_thinking_feedback:
+            # Create a wrapper function for TTS that matches expected signature
+            # Signature: (text, ducking, silent) -> None
+            def speak_for_thinking(text: str, ducking: bool = True, silent: bool = False):
+                # silent=True keeps NEXA in THINKING state visually
+                self.tts.speak(text, blocking=True, ducking=ducking, silent=silent)
+            
+            self.thinking_feedback = init_thinking_feedback(
+                speak_func=speak_for_thinking,
+                emit_message_func=self._emit_message,
+                enabled=True
+            )
+            logger.info("✅ Thinking feedback enabled (Phase 28 - Companion Mode)")
+        else:
+            logger.info("⚠️ Thinking feedback disabled")
+        
+        # Initialize Companion Mode - Phase 29: Proactive Engagement
+        # Enables idle detection and proactive suggestions
+        # Feature flag: Set to False to disable proactive features
+        self.enable_proactive = True
+        self.idle_monitor = None
+        self.proactive_engine = None
+        self.pattern_learner = None
+        self._proactive_check_interval = 60.0  # Check every 60 seconds
+        self._last_proactive_check = 0.0
+        
+        if PROACTIVE_AVAILABLE and self.enable_proactive:
+            try:
+                # Initialize pattern learner first (stores learned patterns)
+                self.pattern_learner = init_pattern_learner()
+                
+                # Initialize idle monitor (tracks user activity)
+                self.idle_monitor = init_idle_monitor()
+                
+                # Initialize proactive engine with LLM generator
+                self.proactive_engine = init_proactive_engine()
+                
+                # Set LLM generator for natural message generation
+                if self.proactive_engine and self.llm_manager:
+                    def llm_generator(prompt: str) -> str:
+                        """Simple LLM wrapper for proactive engine."""
+                        try:
+                            # Use raw prompt mode for proactive messages
+                            result = self.llm_manager._generate_with_llama(prompt, use_raw_prompt=True)
+                            return result or ""
+                        except Exception as e:
+                            logger.error(f"Proactive LLM generation failed: {e}")
+                            return ""
+                    self.proactive_engine.set_llm_generator(llm_generator)
+                    logger.info("✅ Proactive engine LLM generator connected")
+                
+                # Set up callbacks
+                if self.idle_monitor:
+                    self.idle_monitor.set_proactive_opportunity_callback(self._on_proactive_opportunity)
+                
+                logger.info("✅ Proactive engagement enabled (Phase 29 - Companion Mode)")
+            except Exception as e:
+                logger.warning(f"⚠️ Proactive initialization failed: {e}")
+        else:
+            logger.info("⚠️ Proactive engagement disabled")
+        
+        # Listening timeout timer - checks every 5 seconds if we should go IDLE
+        self._listening_timeout_timer = None  # QTimer, set in start()
+        self._listening_start_time = 0.0  # When LISTENING state started
+        self._listening_timeout_duration = 60.0  # Seconds until timeout
+        
+        # Proactive check timer - checks every 60 seconds for proactive opportunities
+        self._proactive_timer = None  # QTimer, set in start()
+        self._proactive_timer_start = 0.0  # When proactive timer started
+        self._proactive_interval = 60.0  # Seconds between proactive checks
         
         # Communication queues
         self.transcription_queue = queue.Queue()
@@ -221,6 +357,41 @@ class NexaBrain:
         except Exception as e:
             logger.error(f"❌ Failed to announce song change: {e}")
     
+    def _create_tts_engine(self, config):
+        """
+        Factory method to create the appropriate TTS engine based on config.
+        
+        Options:
+        - 'kokoro': Default, fast, lightweight (82M params)
+        - 'coqui': Cloned af_heart voice via XTTS, better emotional range (1.8GB model)
+        
+        Set TTS_ENGINE environment variable or config.tts_engine to switch.
+        
+        Returns:
+            TTSEngine or CoquiTTSEngine instance
+        """
+        engine_type = getattr(config, 'tts_engine', 'kokoro').lower()
+        
+        if engine_type == 'coqui':
+            if COQUI_AVAILABLE:
+                # Check if reference audio exists
+                ref_audio = config.voice_dir / "af_heart_reference.wav"
+                if ref_audio.exists():
+                    logger.info("🎤 Using Coqui XTTS with cloned af_heart voice")
+                    return CoquiTTSEngine(config)
+                else:
+                    logger.warning(f"⚠️ Coqui reference audio not found: {ref_audio}")
+                    logger.info("   Run: python test_coqui_clone.py to generate it")
+                    logger.info("   Falling back to Kokoro TTS")
+                    return TTSEngine(config)
+            else:
+                logger.warning("⚠️ Coqui TTS not installed, falling back to Kokoro")
+                logger.info("   Install with: uv pip install coqui-tts")
+                return TTSEngine(config)
+        else:
+            # Default: Kokoro
+            logger.info("🎤 Using Kokoro TTS with af_heart voice")
+            return TTSEngine(config)
     
     def _setup_speaker_enrollment(self):
         """Initialize speaker enrollment system (optional)."""
@@ -257,6 +428,56 @@ class NexaBrain:
             logger.error(f"Failed to setup speaker enrollment: {e}")
             logger.warning("   Continuing without enrollment capability")
             self.speaker_enrollment = None
+    
+    def switch_tts_engine(self, engine_type: str) -> bool:
+        """
+        Switch TTS engine at runtime.
+        
+        Args:
+            engine_type: 'kokoro' or 'coqui'
+            
+        Returns:
+            True if switch successful, False otherwise
+        """
+        engine_type = engine_type.lower().strip()
+        
+        if engine_type not in ('kokoro', 'coqui'):
+            logger.error(f"❌ Unknown TTS engine: {engine_type}. Use 'kokoro' or 'coqui'")
+            return False
+        
+        # Save callbacks from current engine
+        start_cb = self.tts.speaking_start_callback
+        end_cb = self.tts.speaking_end_callback
+        text_cb = self.tts.response_text_callback
+        music_mgr = getattr(self.tts, 'music_manager', None)
+        
+        # Cleanup old engine
+        try:
+            self.tts.cleanup()
+        except:
+            pass
+        
+        # Update config
+        self.config.tts_engine = engine_type
+        
+        # Create new engine
+        self.tts = self._create_tts_engine(self.config)
+        
+        # Restore callbacks
+        self.tts.speaking_start_callback = start_cb
+        self.tts.speaking_end_callback = end_cb
+        self.tts.response_text_callback = text_cb
+        if music_mgr:
+            self.tts.music_manager = music_mgr
+        
+        logger.info(f"✅ Switched to {engine_type} TTS engine")
+        return True
+    
+    def get_tts_engine_name(self) -> str:
+        """Get the name of the current TTS engine."""
+        if hasattr(self.tts, '__class__'):
+            return self.tts.__class__.__name__
+        return "Unknown"
     
     def _is_content_mode_active(self) -> bool:
         """
@@ -336,6 +557,10 @@ class NexaBrain:
         self.listener.music_manager = self.executor.music_manager
         logger.debug("✅ Music ducking connected to listener")
         
+        # Connect intent state to listener for wake word bypass on follow-ups
+        self.listener.intent_state = self.context_manager.intent_state
+        logger.debug("✅ Intent state connected to listener")
+        
         # Connect music manager to TTS for ducking during speech
         self.tts.music_manager = self.executor.music_manager
         logger.debug("✅ Music ducking connected to TTS")
@@ -364,6 +589,22 @@ class NexaBrain:
         
         # Connect speaker rejection callback (for voice authentication feedback)
         self.listener.speaker_rejection_callback = self._on_speaker_rejected
+        
+        # Start listening timeout timer (checks every 5 seconds)
+        from PySide6.QtCore import QTimer
+        self._listening_timeout_timer = QTimer()
+        self._listening_timeout_timer.timeout.connect(self._check_listening_timeout)
+        self._listening_timeout_timer.start(5000)  # Check every 5 seconds
+        logger.info("⏱️ Listening timeout timer started (60s timeout, checks every 5s)")
+        
+        # Start proactive check timer (checks every 60 seconds)
+        if self.enable_proactive and PROACTIVE_AVAILABLE:
+            import time
+            self._proactive_timer = QTimer()
+            self._proactive_timer.timeout.connect(self._check_proactive_opportunity)
+            self._proactive_timer.start(int(self._proactive_interval * 1000))
+            self._proactive_timer_start = time.time()
+            logger.info(f"💜 Proactive timer started ({self._proactive_interval:.0f}s interval)")
         
         logger.info("Nexa Brain started")
         self._change_state(NexaState.IDLE)
@@ -470,6 +711,17 @@ class NexaBrain:
             text: Transcribed text from user
         """
         if text and text.strip():
+            import time
+            
+            # Reset proactive listening flag when user speaks
+            # This ensures the 30s proactive timeout stops
+            if self.listener and self.listener.proactive_listening:
+                logger.info("💜 User responded to proactive - resetting proactive mode")
+                self.listener.proactive_listening = False
+            
+            # Log timer reset
+            logger.info(f"🎤 User spoke: '{text[:50]}{'...' if len(text) > 50 else ''}' - LISTENING timer RESET to {self._listening_timeout_duration:.0f}s")
+            
             logger.debug(f"📥 Received: {text}")
             
             # Process ALL transcriptions without wake word requirement
@@ -616,6 +868,33 @@ class NexaBrain:
                 logger.warning(f"⏸️ Already busy - ignoring: '{cleaned_text}'")
                 return
             
+            # If we're in IDLE and received a valid transcription (wake word passed),
+            # wake up with a natural response and transition to LISTENING
+            if self.state == NexaState.IDLE:
+                logger.info("🎙️ Wake word detected while IDLE - waking up!")
+                self._change_state(NexaState.LISTENING)
+                
+                # Set listener to active mode (no wake word needed now)
+                if self.listener:
+                    self.listener.set_passive_mode(False)
+                    self.listener.record_valid_command()
+                
+                # If wake word was said alone (no command), give a wake-up response
+                if not cleaned_text or cleaned_text.lower() in ['nexa', 'next', 'necks', 'hey nexa']:
+                    import random
+                    wake_responses = [
+                        "I'm here! What do you need?",
+                        "Yes? I'm listening.",
+                        "Hey! What can I do for you?",
+                        "I'm awake! How can I help?",
+                        "Right here! What's up?",
+                    ]
+                    response = random.choice(wake_responses)
+                    logger.info(f"💬 Wake-up response: {response}")
+                    self._emit_message("nexa", response)
+                    self._speak_response(response)
+                    return  # Don't queue empty/wake-word-only text
+            
             logger.debug(f"📤 Queued: \"{cleaned_text}\"")
             self.transcription_queue.put(cleaned_text)
             self._emit_message("user", cleaned_text)
@@ -646,14 +925,19 @@ class NexaBrain:
             message: Optional descriptive message
         """
         try:
-            # Handle wake_word state specially - play acknowledgment sound
+            # Handle wake_word state specially - play acknowledgment sound AND update pet
             if state.lower() == "wake_word":
-                logger.info("🔔 Wake word detected - playing acknowledgment...")
-                # Play a quick beep or TTS to let user know Nexa heard them
+                logger.info("🔔 Wake word detected - Nexa is listening...")
+                
+                # First, set state to LISTENING so pet updates
+                self._set_state(NexaState.LISTENING)
+                
+                # Play a quick TTS acknowledgment to let user know Nexa heard them
                 try:
                     self.speak("Yes?", skip_thinking=True)  # Quick acknowledgment
                 except Exception as tts_error:
                     logger.debug(f"Could not play wake word acknowledgment: {tts_error}")
+                
                 return
             
             # Convert string to NexaState enum
@@ -718,154 +1002,15 @@ class NexaBrain:
         Detect if user input contains multiple commands to be executed sequentially (ENHANCED).
         Now handles 3+ command sequences and sequential information queries.
         
+        Delegates to TextProcessor for the actual logic.
+        
         Args:
             user_text: User's input
             
         Returns:
             List of individual commands (single item if not compound)
         """
-        # Note: re is imported at module level (line 11)
-        
-        # ENHANCEMENT 1: Detect sequential information queries first
-        # Pattern: "what's X and what's Y" or "tell me X and Y"
-        info_query_patterns = [
-            r'what(?:\'s| is) .+ and what(?:\'s| is) .+',
-            r'tell me .+ and .+',
-            r'show me .+ and .+',
-            r'check .+ and .+',
-            r'get .+ and .+'
-        ]
-        
-        user_lower = user_text.lower()
-        
-        for pattern in info_query_patterns:
-            if re.search(pattern, user_lower):
-                # Split on "and" for information queries
-                # But be smart about it - don't split "battery and charging"
-                info_parts = []
-                if ' and what' in user_lower:
-                    # "what's X and what's Y" → split on "and what"
-                    parts_raw = re.split(r'\s+and\s+what', user_text, flags=re.IGNORECASE)
-                    info_parts.append(parts_raw[0].strip())
-                    for i in range(1, len(parts_raw)):
-                        info_parts.append('what' + parts_raw[i].strip())
-                elif ' and tell' in user_lower:
-                    parts_raw = re.split(r'\s+and\s+tell', user_text, flags=re.IGNORECASE)
-                    info_parts.append(parts_raw[0].strip())
-                    for i in range(1, len(parts_raw)):
-                        info_parts.append('tell' + parts_raw[i].strip())
-                else:
-                    # Generic "tell me X and Y" → need intelligent splitting
-                    # Check if both sides have information keywords
-                    info_keywords = ['battery', 'time', 'wifi', 'volume', 'brightness', 'status']
-                    if any(kw in user_lower for kw in info_keywords):
-                        # Split on "and" but only if both sides have content
-                        parts_raw = re.split(r'\s+and\s+', user_text, maxsplit=1, flags=re.IGNORECASE)
-                        if len(parts_raw) == 2:
-                            info_parts = [p.strip() for p in parts_raw]
-                
-                if len(info_parts) >= 2:
-                    logger.info(f"🔍 Detected sequential information queries: {len(info_parts)} queries")
-                    return info_parts
-        
-        # ENHANCEMENT 2: Better comma-separated list detection for 3+ commands
-        # Pattern: "A, B, and C" or "A, B and C"
-        comma_and_pattern = r'.+,.+(?:,|\s+and\s+).+'
-        if re.search(comma_and_pattern, user_lower):
-            # Split by commas first
-            comma_parts = [p.strip() for p in user_text.split(',')]
-            
-            # Handle the last part which might have "and"
-            if len(comma_parts) > 0:
-                last_part = comma_parts[-1]
-                if ' and ' in last_part.lower():
-                    # Split "B and C" → ["B", "C"]
-                    and_parts = re.split(r'\s+and\s+', last_part, flags=re.IGNORECASE)
-                    comma_parts = comma_parts[:-1] + [p.strip() for p in and_parts]
-            
-            # Filter out empty parts
-            comma_parts = [p for p in comma_parts if len(p) > 3]
-            
-            if len(comma_parts) >= 2:
-                logger.info(f"🔗 Detected comma-separated commands: {len(comma_parts)} commands")
-                return comma_parts
-        
-        # ORIGINAL LOGIC: Common conjunctions for 2-command sequences
-        conjunctions = [
-            ' and then ',
-            ' then ',
-            ' and also ',
-            ' also ',
-            ' and ',
-            ', and ',
-            '; '
-        ]
-        
-        # Check if input contains action words that suggest it's a command, not conversation
-        action_indicators = [
-            'set ', 'open ', 'close ', 'list ', 'show ', 'take ',
-            'increase ', 'decrease ', 'turn ', 'switch ', 'launch ',
-            'connect ', 'disconnect ', 'find ', 'copy ', 'paste ',
-            'minimize ', 'maximize ', 'volume ', 'brightness '
-        ]
-        
-        has_action = any(indicator in user_lower for indicator in action_indicators)
-        
-        # Only detect compound commands if there are action indicators
-        if not has_action:
-            return [user_text]
-        
-        # Check if input contains conjunctions
-        found_conjunction = None
-        for conj in conjunctions:
-            if conj in user_lower:
-                found_conjunction = conj
-                break
-        
-        if not found_conjunction:
-            # No compound commands detected
-            return [user_text]
-        
-        # Split by conjunction
-        parts = []
-        remaining = user_text
-        
-        while found_conjunction:
-            # Find position of conjunction (case-insensitive)
-            lower_remaining = remaining.lower()
-            pos = lower_remaining.find(found_conjunction)
-            
-            if pos == -1:
-                break
-            
-            # Extract part before conjunction
-            part = remaining[:pos].strip()
-            if part:
-                parts.append(part)
-            
-            # Move to text after conjunction
-            remaining = remaining[pos + len(found_conjunction):].strip()
-            
-            # Check if there are more conjunctions
-            found_conjunction = None
-            for conj in conjunctions:
-                if conj in remaining.lower():
-                    found_conjunction = conj
-                    break
-        
-        # Add remaining text
-        if remaining.strip():
-            parts.append(remaining.strip())
-        
-        # Filter out very short parts that might be false positives
-        filtered_parts = [p for p in parts if len(p) > 3]
-        
-        if len(filtered_parts) > 1:
-            logger.info(f"🔗 Compound commands detected: {filtered_parts}")
-            return filtered_parts
-        else:
-            # Not actually compound commands
-            return [user_text]
+        return self.text_processor.detect_compound_commands(user_text)
     
     def _execute_compound_commands(self, commands: List[str]) -> str:
         """
@@ -1003,7 +1148,8 @@ class NexaBrain:
         if is_offline:
             function_catalog = self.executor.function_registry.get_catalog(format_type="simple")
             
-            system_prompt = f"""You are Nexa. User: {self.config.user_name}
+            system_prompt = f"""You are Nexa, created by Ali Adil Waseem. User: {self.config.user_name}
+Address the user respectfully as "Sir" or "Boss" occasionally in your responses. Never use their personal name.
 
 Functions: {function_catalog}
 
@@ -1013,7 +1159,8 @@ For talk: {{"response": "your reply"}}
 User: {user_text}"""
         else:
             # Online mode - use abbreviated prompt
-            system_prompt = f"""You are Nexa AI assistant for {self.config.user_name}.
+            system_prompt = f"""You are Nexa, created by Ali Adil Waseem. User: {self.config.user_name}.
+Address the user respectfully as "Sir" or "Boss" occasionally in your responses. Never use their personal name.
 
 Analyze this request and return JSON:
 {{
@@ -1083,6 +1230,9 @@ User: {user_text}"""
                         
                         try:
                             result = self.executor.function_registry.call(func_name, func_params)
+                            
+                            # PHASE 29: Record activity for pattern learning
+                            self._record_activity_pattern(func_name, "command")
                             
                             # CRITICAL: Store this action in context for next command in sequence
                             # This enables "open chrome and maximize it" to work
@@ -1179,6 +1329,9 @@ User: {user_text}"""
         logger.debug(f"🎯 Processing: {user_text[:50]}")
         self._change_state(NexaState.THINKING)
         
+        # PHASE 29 - Record user interaction for idle tracking
+        self._record_user_interaction()
+        
         # CRITICAL FIX: Pause listener during processing to prevent double commands
         # Without this, listener continues recording during LLM processing and captures
         # TTS audio/noise as "new commands" (causing 0.0% false detections)
@@ -1186,12 +1339,31 @@ User: {user_text}"""
         self.listener.pause_listening(for_tts=False)
         logger.debug("🔇 Listener paused for brain processing (music stays at 15%)")
         
+        # PHASE 28 - COMPANION MODE: Immediate acknowledgment
+        # Speak a quick "On it!" or similar phrase BEFORE starting LLM processing
+        # This makes NEXA feel responsive and alive (user knows we heard them)
+        if self.thinking_feedback:
+            try:
+                self.thinking_feedback.start_thinking(user_text)
+            except Exception as e:
+                logger.warning(f"Thinking feedback error: {e}")
+        
         response = None
         
         try:
-            # Add to context
-            self.context_manager.add_interaction(user_text, "")
-            logger.debug("Context updated with user input")
+            # === DIRECT PATTERN MATCHING FOR CRITICAL COMMANDS ===
+            # These bypass LLM for instant, reliable execution
+            user_lower = user_text.lower().strip()
+            
+            # Exit/Shutdown commands - must be handled directly (not via LLM)
+            exit_patterns = ['exit', 'quit', 'close', 'shutdown', 'goodbye', 'bye', 'good bye']
+            if any(user_lower == pattern or user_lower.startswith(pattern + ' ') for pattern in exit_patterns):
+                logger.info(f"🚪 Direct exit command detected: '{user_text}'")
+                response = self.executor.exit_nexa()
+                self._emit_message("nexa", response)
+                # Store exit interaction in memory
+                self.context_manager.add_interaction(user_text, response, success=True)
+                return  # Don't continue processing, app is shutting down
             
             # Use AI to understand intent and execute commands
             logger.debug("Calling _process_with_ai()...")
@@ -1203,8 +1375,20 @@ User: {user_text}"""
                 logger.error("❌ Empty AI response!")
                 response = "I didn't understand that. Can you try again?"
             
-            # Update context with response
-            self.context_manager.update_last_response(response)
+            # Store complete interaction in Smart Memory (with full response)
+            self.context_manager.add_interaction(user_text, response, success=True)
+            logger.debug("💾 Stored interaction in Smart Memory")
+            
+            # PHASE 28: End thinking feedback before speaking response
+            if self.thinking_feedback:
+                self.thinking_feedback.end_thinking(success=True)
+            
+            # CRITICAL: Stop any ongoing TTS (e.g. thinking feedback progress update)
+            # before starting the actual response to prevent race conditions
+            if self.tts.is_speaking():
+                logger.info("🛑 Stopping thinking feedback TTS before response")
+                self.tts.stop()
+                time.sleep(0.1)  # Brief pause to let audio channel fully release
             
             # Emit response message and speak
             logger.debug(f"Emitting response to UI")
@@ -1215,6 +1399,11 @@ User: {user_text}"""
         
         except Exception as e:
             logger.error(f"❌ EXCEPTION in _process_user_input: {e}", exc_info=True)
+            
+            # PHASE 28: End thinking feedback on error
+            if self.thinking_feedback:
+                self.thinking_feedback.end_thinking(success=False)
+            
             error_response = "I'm sorry, I encountered an error processing that request."
             self._emit_message("nexa", error_response)
             try:
@@ -1266,6 +1455,26 @@ User: {user_text}"""
                 # User answered clarification - process the reformulated command
                 logger.info(f"📝 Processing clarification answer: '{clarification_reformulated}'")
                 user_text = clarification_reformulated
+            
+            # STAGE 0.5: Check if user is responding to a pending intent (e.g., play_music asking for song name)
+            has_pending = self.context_manager.has_pending_follow_up()
+            logger.info(f"🎯 STAGE 0.5 - Checking pending follow-up: {has_pending}")
+            
+            if has_pending:
+                logger.info(f"🎯 Pending follow-up detected! Processing: '{user_text}'")
+                pending_result = self._handle_pending_intent(user_text)
+                
+                # Special case: proactive context - inject context into user_text for LLM
+                if isinstance(pending_result, tuple) and pending_result[0] == "__PROACTIVE_CONTEXT__":
+                    user_text = pending_result[1]  # Use contextualized input
+                    logger.info(f"💜 Proactive context injected: '{user_text}'")
+                    # Continue to normal LLM processing with context
+                elif pending_result:
+                    logger.info(f"✅ Pending intent handled: {pending_result[:50]}...")
+                    return pending_result
+                else:
+                    # None means "pass to normal LLM" - not an error
+                    logger.info(f"🔄 Pending intent passed to LLM for: '{user_text}'")
             
             # PHASE 3 OPTIMIZATION: Check quick response cache for instant 0s answers
             normalized_input = user_text.lower().strip()
@@ -1401,6 +1610,10 @@ User: {user_text}"""
                 screen_context_text += f"Content: {screen_analysis.get('result', '')[:500]}...\n"  # Truncate for context window
                 screen_context_text += "Use this to answer questions like 'what does it do?', 'explain that code', 'what's the error?', etc.\n"
             
+            # MEMORY PRE-FETCH: Auto-query memory for personal/relationship questions
+            # This ensures the LLM has the info BEFORE it needs to decide to call a function
+            memory_context_text = self._prefetch_memory_context(user_text)
+            
             # Build system prompt for intent recognition
             # Check current mode to optimize prompt length
             current_mode = self.llm_manager.current_mode
@@ -1411,7 +1624,8 @@ User: {user_text}"""
                 # Get function catalog
                 function_catalog = self.executor.function_registry.get_catalog(format_type="detailed")
                 
-                system_prompt = f"""You are Nexa, Windows AI assistant. User: {self.config.user_name}{history_text}{pending_action_text}{screen_context_text}
+                system_prompt = f"""You are Nexa, Windows AI assistant. User: {self.config.user_name}{history_text}{pending_action_text}{screen_context_text}{memory_context_text}
+Address the user respectfully as "Sir" or "Boss" occasionally in your responses. Never use their personal name.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ OFFLINE MODE AWARENESS:
@@ -1515,6 +1729,48 @@ Use conversation history to resolve references:
 ✓ If user just asked "what time" → "thanks" = conversational response (no function)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ RULE 5 - MEMORY vs SYSTEM COMMANDS (CRITICAL!):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These are DIFFERENT! Choose the right function based on INTENT:
+
+MEMORY QUESTIONS (→ what_do_you_know) - Asking about USER'S PREFERENCES/PERSONAL INFO:
+Keywords: "like", "prefer", "love", "favorite", "enjoy", "do I", "did I tell you", "remember", "friend", "who is", "about"
+✓ "What games do I LIKE?" → what_do_you_know(topic="games I like")
+✓ "What apps do I PREFER?" → what_do_you_know(topic="apps I prefer")
+✓ "What music do I ENJOY?" → what_do_you_know(topic="music I enjoy")
+✓ "What's my favorite color?" → what_do_you_know(topic="favorite color")
+✓ "What's my favorite food?" → what_do_you_know(topic="favorite food")
+✓ "When is my birthday?" → what_do_you_know(topic="birthday")
+✓ "What did I tell you about my work?" → what_do_you_know(topic="my work")
+✓ "Do you remember what I like?" → what_do_you_know(topic="what I like")
+✓ "What do you know about me?" → what_do_you_know(topic="about me")
+✓ "Who is my best friend?" → what_do_you_know(topic="best friend")
+✓ "Tell me about my best friend" → what_do_you_know(topic="best friend")
+✓ "What do you know about [person]?" → what_do_you_know(topic="[person name]")
+✓ "Who is [person]?" → what_do_you_know(topic="[person name]")
+✓ "What do you know about my friends?" → what_do_you_know(topic="friends")
+
+SYSTEM COMMANDS (→ list_games, list_apps, play_music, etc.) - Asking about PC/SYSTEM:
+Keywords: "list", "show", "installed", "are installed", "launch", "open", "play"
+✓ "List games" → list_games() - shows installed games on PC
+✓ "List apps" → list_apps() - shows installed applications
+✓ "Show my music" → list_music() - shows music library
+✓ "What games are installed?" → list_games()
+✓ "Play music" → play_music()
+✓ "Open Chrome" → open_application()
+
+⚠️ KEY DISTINCTION - Same topic, different intent:
+"What games do I LIKE?" = MEMORY (personal preference) → what_do_you_know
+"What games do I HAVE?" = SYSTEM (installed on PC) → list_games
+"What music do I LIKE?" = MEMORY (personal taste) → what_do_you_know
+"List my music" = SYSTEM (files on PC) → list_music
+"What apps do I USE most?" = MEMORY (usage habits) → what_do_you_know
+"What apps are running?" = SYSTEM (current processes) → list_apps
+
+The pattern: If asking about feelings/preferences/personal info → what_do_you_know
+             If asking about system state/installed/running things → system function
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP-BY-STEP REASONING (Think through EACH command like this):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1593,10 +1849,10 @@ User: "set volume to 50"
 Analysis: Clear target (volume) and value (50)
 Response: {{"function_call": {{"name": "set_volume", "parameters": {{"level": 50}}}}, "response": "Setting volume to 50%"}}
 
-Example 9 - Music playback (CRITICAL FOR MUSIC COMMANDS):
+Example 9 - Music playback (CRITICAL: ASK WHAT TO PLAY):
 User: "play some music"
-Analysis: Play random music from library
-Response: {{"function_call": {{"name": "play_music", "parameters": {{}}}}, "response": "Playing a random song"}}
+Analysis: User wants music but didn't specify what - ASK for clarification
+Response: {{"response": "What would you like me to play?"}}
 
 Example 10 - Play specific song:
 User: "play bohemian rhapsody"
@@ -1653,6 +1909,32 @@ User: "create an outline"
 Analysis: Use refine_text with mode="outline"
 Response: {{"function_call": {{"name": "refine_text", "parameters": {{"mode": "outline"}}}}, "response": "Creating outline structure..."}}
 
+Example 21 - Memory recall for relationships:
+User: "What do you know about my best friend?"
+Analysis: Question about personal relationship → MUST use what_do_you_know
+Response: {{"function_call": {{"name": "what_do_you_know", "parameters": {{"topic": "best friend"}}}}, "response": "Let me check my memory..."}}
+
+Example 22 - Memory recall for a person:
+User: "Who is [person name]?"
+Analysis: Asking about a specific person → MUST check memory first
+Response: {{"function_call": {{"name": "what_do_you_know", "parameters": {{"topic": "[person name]"}}}}, "response": "Let me recall what I know..."}}
+
+Example 23 - Memory recall for friends:
+User: "Tell me about my friends"
+Analysis: Asking about relationships → MUST use what_do_you_know
+Response: {{"function_call": {{"name": "what_do_you_know", "parameters": {{"topic": "friends"}}}}, "response": "Let me check what I know about your friends..."}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧠 CRITICAL: MEMORY QUERIES - ALWAYS CHECK BEFORE SAYING "I DON'T KNOW"!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When user asks about ANY of these topics, ALWAYS call what_do_you_know FIRST:
+• Personal info: "my birthday", "where I live", "my university", "about me"
+• Relationships: "my friend", "my best friend", "who is [name]", "about [person]"
+• Preferences: "what I like", "my favorite X", "what I love/hate"
+• Stored facts: "do you know", "do you remember", "tell me about"
+
+✗ NEVER say "I don't know" or "I don't have information" without checking memory first!
+✓ ALWAYS call what_do_you_know for personal/relationship/preference questions
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ CRITICAL: DO NOT INVENT FUNCTION NAMES!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1678,6 +1960,7 @@ User: {user_text}"""
                 # Full detailed prompt for Gemini (online mode)
                 system_prompt = f"""You are Nexa, an AI assistant for Windows with full desktop control capabilities.
 User name: {self.config.user_name}{history_text}{pending_action_text}{screen_context_text}
+Address the user respectfully as "Sir" or "Boss" occasionally in your responses. Never use their personal name.
 
 IMPORTANT CONVERSATIONAL RULES:
 - Keep responses SHORT and NATURAL (1-2 sentences max for conversation)
@@ -2282,11 +2565,51 @@ User request: {user_text}"""
                                 # is asking for a different domain (e.g., "what apps" after "list wifi")
                                 # This rule was causing false corrections, so it's been disabled.
                                 
-                                # Apply correction if needed
+                                # RULE 5: User query contains explicit category keywords - DON'T correct
+                                # If user says "games", don't correct to music function, etc.
+                                category_keywords = {
+                                    'games': ['game', 'games', 'gaming', 'tekken', 'play game'],
+                                    'music': ['music', 'song', 'songs', 'spotify', 'playlist', 'track'],
+                                    'network': ['wifi', 'network', 'internet', 'connection'],
+                                    'app_control': ['app', 'apps', 'application', 'open', 'close', 'launch'],
+                                    'memory': ['memory', 'memories', 'remember', 'forgot', 'know about'],
+                                }
+                                
+                                # Check if user's query clearly mentions a different category
+                                user_mentioned_category = None
+                                for cat, keywords in category_keywords.items():
+                                    if any(kw in user_text_lower for kw in keywords):
+                                        user_mentioned_category = cat
+                                        break
+                                
+                                # If user explicitly mentions a category and last_action is different, DON'T correct
+                                if user_mentioned_category:
+                                    last_action_matches = False
+                                    if user_mentioned_category == 'games' and 'game' in last_action.lower():
+                                        last_action_matches = True
+                                    elif user_mentioned_category == 'music' and 'music' in last_action.lower():
+                                        last_action_matches = True
+                                    elif user_mentioned_category == 'network' and ('wifi' in last_action.lower() or 'network' in last_action.lower()):
+                                        last_action_matches = True
+                                    elif user_mentioned_category == 'app_control' and 'app' in last_action.lower():
+                                        last_action_matches = True
+                                    elif user_mentioned_category == 'memory' and 'memory' in last_action.lower():
+                                        last_action_matches = True
+                                    
+                                    if not last_action_matches:
+                                        needs_correction = False
+                                        logger.info(f"✓ User explicitly asked about '{user_mentioned_category}' - keeping {func_name}, not correcting to {last_action}")
+                                
+                                # Apply correction if needed, BUT only if target function exists
                                 if needs_correction:
-                                    original_func = func_name
-                                    func_name = last_action
-                                    logger.info(f"✅ CORRECTED: {original_func} → {func_name} (follow-up to {last_action})")
+                                    # SAFETY CHECK: Verify last_action function exists before correcting
+                                    if last_action in self.executor.function_registry.functions:
+                                        original_func = func_name
+                                        func_name = last_action
+                                        logger.info(f"✅ CORRECTED: {original_func} → {func_name} (follow-up to {last_action})")
+                                    else:
+                                        logger.warning(f"⚠️ Cannot correct to '{last_action}' - function doesn't exist! Keeping {func_name}")
+                                        needs_correction = False
                                 else:
                                     logger.debug(f"✓ Follow-up function validated: {func_name}")
                         
@@ -2391,6 +2714,9 @@ User request: {user_text}"""
                         # Execute function dynamically via registry
                         try:
                             result = self.executor.function_registry.call(func_name, func_params)
+                            
+                            # PHASE 29: Record activity for pattern learning
+                            self._record_activity_pattern(func_name, "command")
                             
                             # Store this action in action stack for multi-step context
                             self.context_manager.push_action(
@@ -3060,6 +3386,10 @@ User request: {user_text}"""
         logger.debug(f"🗣️ Speaking: {text[:100]}")
         # State will be set to SPEAKING by TTS callback (_on_tts_start)
         
+        # Issue 4 Fix: Use slightly slower speed for clearer, calmer responses
+        # Short responses (< 50 chars) get normal speed, longer ones get slower
+        speech_speed = 0.95 if len(text) > 50 else 1.0
+        
         try:
             # Pause listening to avoid picking up TTS output
             # Keep music at listening volume (15%) - TTS ducking will lower it to 3%
@@ -3069,7 +3399,7 @@ User request: {user_text}"""
             # Speak the response (BLOCKING - waits for TTS to finish)
             # Ducking will lower music from 15% → 3% during speech for clarity
             logger.debug("Starting TTS (blocking mode with ducking)...")
-            self.tts.speak(text, blocking=True, ducking=True)
+            self.tts.speak(text, blocking=True, ducking=True, speed=speech_speed)
             logger.debug("TTS completed")
             
             # Resume listening after TTS completes
@@ -3086,6 +3416,7 @@ User request: {user_text}"""
         """Begin listening for user input."""
         if self.state == NexaState.IDLE:
             self._change_state(NexaState.LISTENING)
+            self.listener.set_passive_mode(False)  # Active mode - process all commands
             self.listener.start_listening()
     
     def stop_listening(self):
@@ -3100,9 +3431,35 @@ User request: {user_text}"""
         Args:
             new_state: New state to transition to
         """
+        import time
+        
         if self.state != new_state:
-            logger.debug(f"State change: {self.state.value} → {new_state.value}")
+            old_state = self.state
             self.state = new_state
+            
+            # Enhanced state transition logging with context
+            state_icons = {
+                NexaState.IDLE: "💤",
+                NexaState.LISTENING: "👂",
+                NexaState.THINKING: "🤔",
+                NexaState.SPEAKING: "💬"
+            }
+            old_icon = state_icons.get(old_state, "❓")
+            new_icon = state_icons.get(new_state, "❓")
+            
+            # Track listening start time
+            if new_state == NexaState.LISTENING:
+                self._listening_start_time = time.time()
+                logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value} (listening timer: {self._listening_timeout_duration:.0f}s)")
+            elif new_state == NexaState.IDLE:
+                # Show how long we were in previous state
+                if old_state == NexaState.LISTENING and self._listening_start_time > 0:
+                    duration = time.time() - self._listening_start_time
+                    logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value} (was listening for {duration:.1f}s)")
+                else:
+                    logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value}")
+            else:
+                logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value}")
             
             # Notify callbacks
             for callback in self.state_callbacks:
@@ -3208,9 +3565,29 @@ User request: {user_text}"""
         self._change_state(NexaState.SPEAKING)
     
     def _on_tts_end(self):
-        """Callback when TTS finishes speaking - return to IDLE."""
-        logger.debug("✅ TTS finished - returning to IDLE")
-        self._change_state(NexaState.IDLE)
+        """Callback when TTS finishes speaking - return to LISTENING for follow-ups."""
+        logger.debug("✅ TTS finished - returning to LISTENING for follow-up commands")
+        
+        # Check if we were in proactive mode (set before TTS started)
+        is_proactive = self.listener.proactive_listening if self.listener else False
+        
+        # Reset listener timeout and ensure active mode (no wake word needed)
+        if self.listener:
+            self.listener.record_valid_command()
+            self.listener.set_passive_mode(False)  # Active mode - process all commands
+        
+        # Stay in LISTENING state for follow-up commands
+        self._change_state(NexaState.LISTENING)
+        
+        # Resume/start listening - preserve proactive mode by passing None
+        # The proactive flag was already set by _on_proactive_opportunity()
+        if self.listener and not self.listener.is_listening:
+            # Don't pass proactive arg - let it preserve existing flag
+            self.listener.start_listening()
+            if is_proactive:
+                logger.info("💜 Proactive mode active - user can respond without wake word")
+        elif self.listener:
+            self.listener.resume_listening()
     
     def _emit_mode_change(self, new_mode):
         """Notify all registered callbacks of mode change."""
@@ -3229,35 +3606,15 @@ User request: {user_text}"""
         Remove markdown formatting from text before TTS.
         Removes: **, *, bullets, headers, etc.
         
+        Delegates to TextProcessor for the actual logic.
+        
         Args:
             text: Original text with markdown
             
         Returns:
             Clean text for TTS
         """
-        # Note: re is imported at module level (line 11)
-        
-        # Remove bold/italic markers
-        text = re.sub(r'\*\*', '', text)  # Remove **
-        text = re.sub(r'\*', '', text)    # Remove *
-        text = re.sub(r'__', '', text)    # Remove __
-        text = re.sub(r'_', ' ', text)    # Remove _
-        
-        # Remove bullet points
-        text = re.sub(r'^\s*[\-\*]\s+', '', text, flags=re.MULTILINE)
-        
-        # Remove headers (###, ##, #)
-        text = re.sub(r'^\s*#{1,6}\s+', '', text, flags=re.MULTILINE)
-        
-        # Remove code blocks
-        text = re.sub(r'```[\s\S]*?```', '', text)
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        
-        # Clean up extra whitespace
-        text = re.sub(r'\n\s*\n', '. ', text)  # Multiple newlines → period
-        text = re.sub(r'\s+', ' ', text)       # Multiple spaces → single space
-        
-        return text.strip()
+        return self.text_processor.clean_markdown(text)
     
     def _learn_from_action(self, func_name: str, params: Dict[str, Any]):
         """
@@ -3303,28 +3660,15 @@ User request: {user_text}"""
         Critical for preventing hallucinations where LLM claims success
         when the function actually failed.
         
+        Delegates to FunctionValidator for the actual logic.
+        
         Args:
             result: Function execution result (usually string)
             
         Returns:
             bool: True if result indicates error, False if success
         """
-        # Only check string results (structured data is usually success)
-        if not isinstance(result, str):
-            return False
-        
-        result_lower = result.lower()
-        
-        # Get error indicators dynamically (allows config customization)
-        error_indicators = self._get_error_indicators()
-        
-        # Check if any error indicator is in the result
-        has_error = any(indicator in result_lower for indicator in error_indicators)
-        
-        if has_error:
-            logger.debug(f"🚨 Error detected in result: {result[:100]}")
-        
-        return has_error
+        return self.function_validator.is_error_result(result)
     
     def _find_similar_apps(self, query: str, max_results: int = 3) -> List[str]:
         """
@@ -3361,42 +3705,22 @@ User request: {user_text}"""
         ALSO includes functions that return their own descriptive messages
         (like music functions) to avoid double TTS from LLM response + function result.
         
+        Delegates to FunctionValidator for the actual logic.
+        
         Args:
             func_name: Function name to check
             
         Returns:
             bool: True if information function, False if action
         """
-        # DYNAMIC: Check function name patterns instead of hardcoded list
-        # Information query patterns: get_, is_, list_, read_, describe_, find_, check_, suggest_, whats_, music_library_
-        # FIX (M-14, M-15, M-16): Added 'suggest_' for music suggestion functions
-        # FIX (M-14, M-15 REGRESSION): Added 'whats_' and 'music_library_' patterns for music info functions
-        info_patterns = ['get_', 'is_', 'list_', 'read_', 'describe_', 'find_', 'check_', 'suggest_', 'whats_', 'music_library_']
-        
-        # Check if function starts with any info pattern
-        for pattern in info_patterns:
-            if func_name.startswith(pattern):
-                logger.debug(f"ℹ️ '{func_name}' identified as information function (pattern: {pattern})")
-                return True
-        
-        # FIX: Music playback functions return their own descriptive messages
-        # We must return the actual result to avoid double TTS (LLM response + function result)
-        music_result_functions = ['next_song', 'previous_song', 'play_music', 'play_song', 
-                                   'pause_music', 'resume_music', 'stop_music', 'shuffle_music',
-                                   'set_music_volume', 'toggle_loop', 'play_random']
-        if func_name in music_result_functions:
-            logger.debug(f"🎵 '{func_name}' identified as music function (returns own message)")
-            return True
-        
-        # Action patterns: open_, close_, set_, launch_, minimize_, maximize_, etc.
-        # If not info pattern, assume it's an action
-        logger.debug(f"⚙️ '{func_name}' identified as action function")
-        return False
+        return self.function_validator.is_information_function(func_name)
     
     def validate_function_call(self, func_name: str, func_params: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """
         Validate a function call before execution (CR-12, CR-13, CR-14).
         Prevents hallucinated functions, invalid parameters, and unsafe operations.
+        
+        Delegates to FunctionValidator for the actual logic.
         
         Args:
             func_name: Function name to validate
@@ -3407,161 +3731,29 @@ User request: {user_text}"""
                    If valid: (True, None)
                    If invalid: (False, "error description")
         """
-        # VALIDATION 0: Content Mode restriction
-        # When Content Mode is active, only allow content-related functions
-        if self._is_content_mode_active():
-            CONTENT_MODE_ALLOWED_FUNCTIONS = {
-                'refine_text',
-                'create_pdf',
-                'enter_content_mode',
-                'exit_content_mode'
-            }
-            
-            if func_name not in CONTENT_MODE_ALLOWED_FUNCTIONS:
-                logger.info(f"🚫 Content Mode active - blocking '{func_name}' (not in allowed list)")
-                return (False, 
-                    "I can only help with text editing while in Content Mode. "
-                    "Please say 'exit content mode' to use other features like music, apps, or system commands.")
-        
-        # VALIDATION 1: Check if function exists in registry
-        if not self.executor.function_registry.has_function(func_name):
-            available = list(self.executor.function_registry.functions.keys())
-            logger.warning(f"⚠️ VALIDATION FAILED: Function '{func_name}' does not exist")
-            logger.warning(f"   Available functions: {', '.join(available[:20])}...")
-            return (False, f"I tried to use a function '{func_name}' that doesn't exist. "
-                          "Could you rephrase your request?")
-        
-        # VALIDATION 2: Check parameter types and values
-        func_info = self.executor.function_registry.get_function_info(func_name)
-        if not func_info:
-            return (False, f"Cannot validate function '{func_name}' - no metadata available")
-        
-        expected_params = func_info.get('parameters', {})
-        
-        # Check for required parameters (basic check - can be extended)
-        # Note: Currently all params are optional in most functions, but this enables future strict validation
-        for param_name, param_desc in expected_params.items():
-            if param_name not in func_params and 'required' in param_desc.lower():
-                logger.warning(f"⚠️ VALIDATION FAILED: Missing required parameter '{param_name}' for {func_name}")
-                return (False, f"Missing required parameter '{param_name}' for {func_name}")
-        
-        # VALIDATION 3: Sanitize string parameters (prevent command injection)
-        for param_name, param_value in func_params.items():
-            if isinstance(param_value, str):
-                # Check for dangerous characters/patterns
-                dangerous_patterns = [';', '&&', '||', '|', '`', '$', '$(', '${']
-                for pattern in dangerous_patterns:
-                    if pattern in param_value:
-                        logger.warning(f"⚠️ VALIDATION FAILED: Dangerous pattern '{pattern}' in parameter '{param_name}'")
-                        return (False, f"Invalid characters detected in parameter. Please rephrase your request.")
-        
-        # VALIDATION 4: Range check for numeric parameters
-        if func_name in ['set_volume', 'increase_volume', 'decrease_volume']:
-            level = func_params.get('level') or func_params.get('amount')
-            if level is not None:
-                try:
-                    level_int = int(level)
-                    if level_int < 0 or level_int > 100:
-                        logger.warning(f"⚠️ VALIDATION FAILED: Volume level {level_int} out of range (0-100)")
-                        return (False, f"Volume level must be between 0 and 100")
-                except (ValueError, TypeError):
-                    return (False, f"Invalid volume level: {level}")
-        
-        if func_name in ['set_brightness', 'increase_brightness', 'decrease_brightness']:
-            level = func_params.get('level') or func_params.get('amount')
-            if level is not None:
-                try:
-                    level_int = int(level)
-                    if level_int < 0 or level_int > 100:
-                        logger.warning(f"⚠️ VALIDATION FAILED: Brightness level {level_int} out of range (0-100)")
-                        return (False, f"Brightness level must be between 0 and 100")
-                except (ValueError, TypeError):
-                    return (False, f"Invalid brightness level: {level}")
-        
-        # VALIDATION 5: Prevent dangerous operations (can be extended)
-        # Example: Prevent closing critical system processes
-        if func_name == 'close_application':
-            app_name = func_params.get('app_name', '').lower()
-            dangerous_apps = ['explorer', 'dwm', 'csrss', 'winlogon', 'system', 'svchost']
-            if any(dangerous in app_name for dangerous in dangerous_apps):
-                logger.warning(f"⚠️ VALIDATION FAILED: Attempt to close critical system process '{app_name}'")
-                return (False, f"I cannot close '{app_name}' as it's a critical system process")
-        
-        # VALIDATION 6: Music playback state validation (CR-13)
-        # Check if music operations require active playback
-        music_requires_playing = ['next_song', 'previous_song', 'pause_music', 'resume_music', 'stop_music', 'whats_playing']
-        if func_name in music_requires_playing:
-            # Access music manager to check playback state
-            if hasattr(self.executor, 'music_manager'):
-                is_playing = self.executor.music_manager.is_playing
-                
-                # Special case: resume_music requires music to be paused
-                if func_name == 'resume_music':
-                    is_paused = self.executor.music_manager.is_paused
-                    if not is_paused:
-                        logger.warning(f"⚠️ VALIDATION FAILED: Music is not paused, cannot resume")
-                        return (False, "Music is not paused. It's either playing or stopped.")
-                # All other music operations require music to be playing
-                elif not is_playing:
-                    logger.warning(f"⚠️ VALIDATION FAILED: {func_name} requires music to be playing")
-                    
-                    # Provide helpful error messages
-                    if func_name == 'whats_playing':
-                        return (False, "No music is currently playing. Would you like me to play something?")
-                    elif func_name in ['next_song', 'previous_song']:
-                        return (False, "No music is currently playing. Say 'play music' to start playback first.")
-                    elif func_name == 'pause_music':
-                        return (False, "There's no music playing to pause")
-                    elif func_name == 'stop_music':
-                        return (False, "There's no music playing to stop")
-                    else:
-                        return (False, f"Music is not currently playing")
-        
-        # All validations passed
-        logger.debug(f"✅ VALIDATION PASSED: {func_name} with params {func_params}")
-        return (True, None)
+        return self.function_validator.validate_function_call(
+            func_name, 
+            func_params, 
+            is_content_mode=self._is_content_mode_active()
+        )
     
     def _get_error_indicators(self) -> List[str]:
         """
         Get list of error indicator phrases dynamically.
         Can be extended to load from config file in the future.
         
+        Delegates to FunctionValidator for the actual logic.
+        
         Returns:
             List[str]: Error indicator phrases
         """
-        # DYNAMIC: Load from config if available, otherwise use defaults
-        # Future: self.config.get('error_indicators', default_indicators)
-        
-        default_indicators = [
-            "couldn't find", "could not find", "not found", 
-            "failed", "error", "unable to", "can't", "cannot",
-            "doesn't exist", "does not exist", "not installed",
-            "not running", "is not running", "not available",
-            "no such", "invalid", "not recognized",
-            "permission denied", "access denied",
-            "i don't see", "i couldn't", "i can't",
-            "sorry", "unfortunately",
-            "try again", "check"
-        ]
-        
-        # Check if config has custom error indicators
-        if hasattr(self.config, 'error_indicators'):
-            custom_indicators = getattr(self.config, 'error_indicators', [])
-            if custom_indicators:
-                logger.debug(f"✅ Loaded {len(custom_indicators)} custom error indicators from config")
-                return custom_indicators
-        
-        return default_indicators
+        return self.function_validator.get_error_indicators()
     
     def _build_llama_history(self, recent_history: List[Dict[str, Any]]) -> str:
         """
         Build a Llama-optimized conversation history.
         
-        Llama 3.1 benefits from:
-        1. Clear separation of interactions
-        2. Focus on Q&A pairs with results
-        3. Add explicit follow-up hints
-        4. Extract key entities for reference resolution
+        Delegates to ConversationHistoryBuilder.
         
         Args:
             recent_history: Recent conversation interactions
@@ -3569,86 +3761,213 @@ User request: {user_text}"""
         Returns:
             str: Formatted history for Llama
         """
-        if not recent_history:
+        return self.history_builder.build_llama_history(recent_history)
+    
+    def _prefetch_memory_context(self, user_text: str) -> str:
+        """
+        Pre-fetch relevant memory context for personal/relationship questions.
+        
+        This ensures the LLM has the information BEFORE it needs to decide
+        whether to call what_do_you_know. Makes memory queries much more reliable.
+        
+        Args:
+            user_text: User's input text
+            
+        Returns:
+            str: Memory context to inject into prompt, or empty string
+        """
+        try:
+            user_lower = user_text.lower()
+            
+            # Keywords that trigger memory pre-fetch
+            memory_triggers = [
+                # Relationship words
+                'friend', 'best friend', 'bestfriend', 'brother', 'sister', 
+                'mother', 'father', 'mom', 'dad', 'girlfriend', 'boyfriend',
+                'wife', 'husband', 'cousin', 'uncle', 'aunt', 'boss', 'family',
+                # Personal info
+                'birthday', 'favorite', 'favourite', 'hobby', 'hobbies',
+                'like', 'love', 'prefer', 'enjoy',
+                # Questions about people/self
+                'who is', 'who\'s', 'do you know', 'tell me about', 'what about',
+                'remember', 'what do you know', 'know about',
+                # Creator
+                'created', 'creator', 'made you', 'who made',
+            ]
+            
+            # DYNAMIC: Load personal names, locations, and education from user_prefs
+            dynamic_triggers = self._get_dynamic_memory_triggers()
+            memory_triggers.extend(dynamic_triggers)
+            
+            # Build exclusion list dynamically (user's own name should not trigger name detection)
+            user_name_lower = self.config.user_name.lower() if hasattr(self, 'config') and self.config else 'ali'
+            name_exclusions = {'the', 'what', 'who', 'how', 'why', 'when', 'where', 
+                             'can', 'could', 'would', 'should', 'did', 'does', 
+                             'have', 'has', 'are', 'is', 'am', 'was', 'were', 
+                             'will', 'nexa', user_name_lower,
+                             # Common command/action words (not person names)
+                             'get', 'set', 'open', 'close', 'start', 'stop', 'run',
+                             'show', 'tell', 'take', 'play', 'pause', 'find', 'check',
+                             'make', 'turn', 'switch', 'change', 'move', 'lock', 'unlock',
+                             'search', 'list', 'help', 'give', 'let', 'put', 'send',
+                             'read', 'write', 'save', 'delete', 'create', 'add', 'remove',
+                             'try', 'use', 'see', 'look', 'go', 'come', 'keep', 'say',
+                             'my', 'your', 'his', 'her', 'our', 'its', 'their',
+                             'this', 'that', 'these', 'those', 'it', 'all', 'just',
+                             'also', 'too', 'not', 'don', 'but', 'and', 'for',
+                             'with', 'from', 'about', 'some', 'any', 'new', 'old',
+                             'now', 'here', 'there', 'please', 'thanks', 'yes', 'no',
+                             'hey', 'hi', 'hello', 'okay', 'sure', 'well', 'much',
+                             'very', 'really', 'more', 'most', 'only', 'other',
+                             'right', 'want', 'need', 'know', 'think', 'like',
+                             'full', 'info', 'system', 'profile', 'screen', 'volume',
+                             'brightness', 'battery', 'time', 'date', 'app', 'window',
+                             'file', 'folder', 'name', 'size', 'type', 'mode',
+                             'what\'s', 'it\'s', 'don\'t', 'i\'m', 'you\'re', 'can\'t',
+                             'won\'t', 'didn\'t', 'doesn\'t', 'isn\'t', 'aren\'t'}
+            
+            # Check if any trigger is present
+            triggered = False
+            trigger_topics = []
+            
+            for trigger in memory_triggers:
+                if trigger in user_lower:
+                    triggered = True
+                    trigger_topics.append(trigger)
+            
+            # Also check for capitalized names (potential person names)
+            words = user_text.split()
+            for word in words:
+                if word and word[0].isupper() and len(word) > 2 and word.lower() not in name_exclusions:
+                    triggered = True
+                    trigger_topics.append(word)
+            
+            if not triggered:
+                return ""
+            
+            # Query memory for relevant facts
+            if not hasattr(self, 'context_manager') or not self.context_manager:
+                return ""
+            
+            if not hasattr(self.context_manager, 'smart_memory') or not self.context_manager.smart_memory:
+                return ""
+            
+            # Build search query from trigger topics
+            search_query = user_text  # Use full text for semantic search
+            
+            # Get relevant facts from memory
+            result = self.context_manager.recall_knowledge_answer(search_query, limit=5)
+            
+            if not result.get('found'):
+                # Also try individual trigger topics (only meaningful ones)
+                for topic in trigger_topics[:3]:  # Limit to 3 topics
+                    # Skip short/generic topics that won't yield useful results
+                    if len(topic) < 4:
+                        continue
+                    result = self.context_manager.recall_knowledge_answer(topic, limit=3)
+                    if result.get('found'):
+                        break
+            
+            if not result.get('found'):
+                return ""
+            
+            # Build memory context text
+            facts = result.get('facts', [])
+            if not facts:
+                return ""
+            
+            memory_text = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            memory_text += "🧠 MEMORY CONTEXT (USE THIS INFO TO ANSWER!):\n"
+            memory_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            memory_text += "I remember the following about the user:\n"
+            for fact in facts[:5]:  # Limit to 5 facts
+                memory_text += f"• {fact}\n"
+            memory_text += "\n⚠️ USE THE ABOVE FACTS to answer the user's question naturally!\n"
+            memory_text += "DO NOT say 'I don't know' - the information is RIGHT HERE!\n"
+            memory_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            logger.info(f"🧠 Memory pre-fetch found {len(facts)} relevant facts for: '{user_text[:50]}...'")
+            return memory_text
+            
+        except Exception as e:
+            logger.warning(f"Memory pre-fetch failed (non-critical): {e}")
             return ""
+    
+    def _get_dynamic_memory_triggers(self) -> list:
+        """
+        Dynamically build memory trigger keywords from user_prefs.json.
         
-        # Limit to last 10 interactions for Llama 3.1 (it has good context window)
-        # But keep it reasonable to avoid excessive token usage
-        compact_history = recent_history[-10:]
+        This replaces hardcoded names like 'saliha', 'waseem', 'nusrat' with
+        whatever is in the user's preferences — works for ANY user, not just Ali.
         
-        # OPTIMIZATION 2: Extract key information from each interaction
-        structured_context = []
-        last_command = None
-        last_result = None
-        last_entities = []
-        
-        for interaction in compact_history:
-            user_msg = interaction.get('user', '').strip()
-            nexa_msg = interaction.get('nexa', '').strip()
+        Returns:
+            list: Dynamic trigger keywords from personal data
+        """
+        triggers = []
+        try:
+            if not hasattr(self, 'config') or not self.config:
+                return triggers
             
-            if not user_msg:
-                continue
+            prefs_file = self.config.data_dir / 'user_prefs.json'
+            if not prefs_file.exists():
+                return triggers
             
-            # Extract command type from user message
-            command_type = self._identify_command_type(user_msg)
+            import json
+            with open(prefs_file, 'r', encoding='utf-8-sig') as f:
+                prefs = json.load(f)
             
-            # Extract entities (app names, numbers, etc.)
-            entities = self._extract_entities_from_message(user_msg, nexa_msg)
+            personal = prefs.get('personal', {})
             
-            # Build structured entry
-            entry = {
-                'user': user_msg,
-                'nexa': nexa_msg,
-                'type': command_type,
-                'entities': entities
-            }
+            # Extract relationship names (first names, nicknames)
+            relationships = personal.get('relationships', {})
+            for key, info in relationships.items():
+                # Add the key itself (e.g., 'saliha', 'father')
+                triggers.append(key.lower())
+                # Add the full name
+                if 'name' in info:
+                    triggers.append(info['name'].lower())
+                    # Add first name only
+                    first_name = info['name'].split()[0].lower()
+                    if first_name != key.lower():
+                        triggers.append(first_name)
+                # Add nickname if different
+                if 'nickname' in info:
+                    triggers.append(info['nickname'].lower())
+                # Add relationship type 
+                if 'relationship' in info:
+                    triggers.append(info['relationship'].lower())
             
-            structured_context.append(entry)
+            # Extract user_info keywords (location, university, etc.)
+            user_info = personal.get('user_info', {})
+            for field in ['university', 'location']:
+                value = user_info.get(field, '')
+                if value:
+                    # Add full value and individual significant words
+                    triggers.append(value.lower())
+                    for word in value.split():
+                        clean_word = word.strip('(),').lower()
+                        if len(clean_word) > 2 and clean_word not in ('of', 'and', 'the', 'for'):
+                            triggers.append(clean_word)
             
-            # Remember last command for follow-up detection
-            if command_type in ['query', 'list', 'get']:
-                last_command = user_msg
-                last_result = nexa_msg
-                last_entities = entities
-        
-        # OPTIMIZATION 3: Build compact prompt with follow-up hints
-        history_text = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        history_text += "CONVERSATION CONTEXT (for follow-up questions):\n"
-        history_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        # Show last few interactions in compact format
-        for idx, entry in enumerate(structured_context, 1):
-            history_text += f"\n[{idx}] User: {entry['user'][:80]}{'...' if len(entry['user']) > 80 else ''}\n"
-            history_text += f"    Nexa: {entry['nexa'][:100]}{'...' if len(entry['nexa']) > 100 else ''}\n"
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_triggers = []
+            for t in triggers:
+                if t not in seen:
+                    seen.add(t)
+                    unique_triggers.append(t)
             
-            # Add entity hints for reference resolution
-            if entry['entities']:
-                entity_str = ', '.join(entry['entities'][:5])  # Max 5 entities
-                history_text += f"    → Mentioned: {entity_str}\n"
-        
-        # OPTIMIZATION 4: Add explicit follow-up context
-        if last_command and last_result:
-            history_text += "\n" + "─" * 78 + "\n"
-            history_text += "LAST QUERY RESULT (use this for follow-ups like 'how many?', 'what are they?'):\n"
-            history_text += f"Question: {last_command}\n"
-            history_text += f"Answer: {last_result[:200]}{'...' if len(last_result) > 200 else ''}\n"
+            return unique_triggers
             
-            if last_entities:
-                history_text += f"Key Items: {', '.join(last_entities[:10])}\n"
-        
-        history_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        history_text += "FOLLOW-UP INSTRUCTIONS:\n"
-        history_text += "• If user asks 'how many?', count items from LAST QUERY RESULT\n"
-        history_text += "• If user asks 'what are they?', list items from LAST QUERY RESULT\n"
-        history_text += "• If user says 'it', 'that', 'them' - refer to entities in LAST QUERY RESULT\n"
-        history_text += "• If unclear, ask for clarification instead of guessing\n"
-        history_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        return history_text
+        except Exception as e:
+            logger.debug(f"Could not load dynamic memory triggers: {e}")
+            return triggers
     
     def _identify_command_type(self, user_msg: str) -> str:
         """
         Identify the type of command from user message.
+        
+        Delegates to ConversationHistoryBuilder.
         
         Args:
             user_msg: User's message
@@ -3656,22 +3975,13 @@ User request: {user_text}"""
         Returns:
             str: Command type (query, action, conversation)
         """
-        msg_lower = user_msg.lower()
-        
-        # Query/Information commands
-        if any(word in msg_lower for word in ['list', 'show', 'get', 'what', 'how many', 'tell me', 'check']):
-            return 'query'
-        
-        # Action commands
-        if any(word in msg_lower for word in ['open', 'close', 'set', 'launch', 'start', 'stop', 'minimize', 'maximize']):
-            return 'action'
-        
-        # Conversational
-        return 'conversation'
+        return self.history_builder.identify_command_type(user_msg)
     
     def _extract_entities_from_message(self, user_msg: str, nexa_msg: str) -> List[str]:
         """
         Extract key entities (app names, numbers, items) from messages.
+        
+        Delegates to ConversationHistoryBuilder.
         
         Args:
             user_msg: User's message
@@ -3680,38 +3990,13 @@ User request: {user_text}"""
         Returns:
             List[str]: Extracted entities
         """
-        entities = []
-        
-        # Extract from Nexa's response (more reliable - contains actual data)
-        import re
-        
-        # Extract numbers (counts)
-        numbers = re.findall(r'\b(\d+)\s+(games|apps|applications|items|networks)', nexa_msg.lower())
-        for num, item_type in numbers:
-            entities.append(f"{num} {item_type}")
-        
-        # Extract app/game names (capitalized words or quoted strings)
-        # Pattern: Word starting with capital, or "quoted text"
-        names = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', nexa_msg)
-        entities.extend(names[:5])  # Max 5 names
-        
-        # Extract quoted items
-        quoted = re.findall(r'"([^"]+)"', nexa_msg)
-        entities.extend(quoted[:3])  # Max 3 quoted items
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_entities = []
-        for entity in entities:
-            if entity.lower() not in seen:
-                seen.add(entity.lower())
-                unique_entities.append(entity)
-        
-        return unique_entities[:10]  # Max 10 entities
+        return self.history_builder.extract_entities_from_message(user_msg, nexa_msg)
     
     def _detect_mode_switch_command(self, user_input: str) -> str:
         """
         Detect explicit mode switching commands (go online/offline, switch mode).
+        
+        Delegates to CommandDetector.
         
         Args:
             user_input: User's message
@@ -3719,52 +4004,17 @@ User request: {user_text}"""
         Returns:
             str: Response message if mode switched, None otherwise
         """
-        from core.llm_manager import LLMMode
-        
-        user_lower = user_input.lower().strip()
-        current_mode = self.llm_manager.current_mode
-        
-        # Detect "go online" / "switch to online" commands
-        online_triggers = [
-            'go online', 'switch to online', 'switch online',
-            'change to online', 'enable online', 'turn on online',
-            'use online mode', 'activate online'
-        ]
-        
-        # Detect "go offline" / "switch to offline" commands
-        offline_triggers = [
-            'go offline', 'switch to offline', 'switch offline',
-            'change to offline', 'enable offline', 'turn on offline',
-            'use offline mode', 'activate offline'
-        ]
-        
-        # Check for online mode switch
-        if any(trigger in user_lower for trigger in online_triggers):
-            if current_mode == LLMMode.ONLINE:
-                return "I'm already in online mode with internet features available."
-            else:
-                logger.info("🌐 User requested mode switch: OFFLINE → ONLINE (Phase 24)")
-                self.llm_manager.set_mode(LLMMode.ONLINE)
-                return "Switching to online mode. Internet-dependent features (vision, web search, weather) are now available."
-        
-        # Check for offline mode switch
-        if any(trigger in user_lower for trigger in offline_triggers):
-            if current_mode == LLMMode.OFFLINE:
-                return "I'm already in offline mode. All core features work perfectly without internet."
-            else:
-                logger.info("📴 User requested mode switch: ONLINE → OFFLINE (Phase 24)")
-                self.llm_manager.set_mode(LLMMode.OFFLINE)
-                return "Switching to offline mode. All core features available, but internet-dependent features (vision, web search, weather) are disabled."
-        
-        return None  # Not a mode switch command
+        return self.command_detector.detect_mode_switch_command(
+            user_input, 
+            self.llm_manager.current_mode, 
+            self.llm_manager
+        )
     
     def _detect_vision_request(self, user_input: str) -> bool:
         """
-        Detect if user is requesting AI vision analysis (currently disabled until Phase 23).
+        Detect if user is requesting AI vision analysis.
         
-        IMPORTANT DISTINCTION:
-        - Simple screenshot capture (SCREENSHOT command) = File I/O operation, works offline
-        - AI vision analysis (DESCRIBE_SCREEN, READ_SCREEN, SCREEN_ANALYZE) = Disabled (Phase 23 will add PaddleOCR-VL)
+        Delegates to CommandDetector.
         
         Args:
             user_input: User's message
@@ -3772,35 +4022,16 @@ User request: {user_text}"""
         Returns:
             bool: True ONLY for actual AI vision requests, not simple screenshot commands
         """
-        user_lower = user_input.lower()
-        
-        # First check: Explicit screenshot file operations that should work OFFLINE
-        # These are pure file I/O commands with no AI/vision processing
-        screenshot_file_ops = [
-            'take screenshot', 'take a screenshot', 'capture screen',
-            'screenshot', 'screen capture', 'screencap',
-            'save screenshot', 'screenshot to clipboard',
-            'open screenshots folder', 'how many screenshots'
-        ]
-        
-        # If it's a simple screenshot command, allow it offline
-        if any(op in user_lower for op in screenshot_file_ops):
-            return False  # Not a vision request, just file operation
-        
-        # Second check: Actual AI vision analysis keywords that require online mode
-        ai_vision_keywords = [
-            'describe', 'analyze', 'read screen', 'what do you see',
-            'look at', 'observe', "what's on", 'show me',
-            'what am i', 'where am i', 'see', 'look',
-            'view', 'current screen', 'this screen', 'my screen'
-        ]
-        
-        # Vision features disabled until Phase 23 (PaddleOCR-VL)
-        return any(keyword in user_lower for keyword in ai_vision_keywords)
+        return self.command_detector.detect_vision_request(
+            user_input, 
+            self.llm_manager.current_mode
+        )
     
     def _extract_action_verb(self, user_text: str) -> str:
         """
         Extract the action verb from user input for semantic validation.
+        
+        Delegates to TextProcessor for the actual logic.
         
         Args:
             user_text: Original user input
@@ -3808,25 +4039,14 @@ User request: {user_text}"""
         Returns:
             str: Action verb (open, close, set, etc.) or empty string
         """
-        text_lower = user_text.lower()
-        
-        # Common action verbs in order of specificity
-        action_verbs = [
-            'minimize', 'maximize', 'restore', 'close', 'open', 'launch',
-            'start', 'stop', 'set', 'get', 'show', 'hide', 'list',
-            'connect', 'disconnect', 'take', 'read', 'find', 'scan'
-        ]
-        
-        for verb in action_verbs:
-            if verb in text_lower:
-                return verb
-        
-        return ""
+        return self.text_processor.extract_action_verb(user_text)
     
     def _normalize_window_variations(self, user_text: str) -> str:
         """
         Normalize natural language variations for window management commands.
         Helps AI understand phrases like "make it bigger" = "maximize".
+        
+        Delegates to TextProcessor for the actual logic.
         
         Args:
             user_text: Original user input
@@ -3834,59 +4054,13 @@ User request: {user_text}"""
         Returns:
             str: Normalized text with standardized window commands
         """
-        text_lower = user_text.lower()
-        
-        # Window management variations
-        window_variations = {
-            # Minimize variations
-            'make smaller': 'minimize',
-            'make it smaller': 'minimize',
-            'make this smaller': 'minimize',
-            'shrink': 'minimize',
-            'hide window': 'minimize',
-            'hide it': 'minimize',
-            
-            # Maximize variations
-            'make bigger': 'maximize',
-            'make it bigger': 'maximize',
-            'make this bigger': 'maximize',
-            'fullscreen': 'maximize',
-            'full screen': 'maximize',
-            'make fullscreen': 'maximize',
-            'make it fullscreen': 'maximize',
-            'expand': 'maximize',
-            'expand window': 'maximize',
-            'expand it': 'maximize',
-            
-            # Window reference variations
-            'this window': 'active window',
-            'current window': 'active window',
-            'this app': 'active window',
-            'active app': 'active window',
-        }
-        
-        # Apply normalizations with case-insensitive replacement
-        normalized_text = user_text
-        for variation, standard in window_variations.items():
-            if variation in text_lower:
-                # Use regex for case-insensitive replacement
-                import re
-                pattern = re.compile(re.escape(variation), re.IGNORECASE)
-                normalized_text = pattern.sub(standard, normalized_text)
-                logger.debug(f"🔄 Normalized window variation: '{variation}' → '{standard}'")
-        
-        return normalized_text
+        return self.text_processor.normalize_window_variations(user_text)
     
     def _resolve_standalone_ordinal(self, user_text: str) -> str:
         """
         Resolve standalone ordinal commands by auto-executing implicit list commands.
         
-        Handles cases like:
-            "launch the first one" → auto-lists games → resolves to "launch TEKKEN 8"
-            "open the second app" → auto-lists running apps → resolves to "open Chrome"
-            "connect to the last network" → auto-lists WiFi → resolves to "connect to HomeWiFi"
-        
-        This ONLY runs if there's NO list in context (standalone ordinal command).
+        Delegates to ReferenceResolver.
         
         Args:
             user_text: Original user input with ordinal reference
@@ -3894,94 +4068,14 @@ User request: {user_text}"""
         Returns:
             str: Text with ordinal resolved to actual item (after auto-listing)
         """
-        text_lower = user_text.lower()
-        
-        # Check if ordinal present
-        import re
-        ordinal_match = re.search(r'\b(first|second|third|fourth|fifth|last|previous)(\s+one)?\b', text_lower)
-        if not ordinal_match:
-            return user_text  # No ordinal found
-        
-        ordinal = ordinal_match.group(1)  # Extract ordinal word
-        
-        # Check if we already have a list in context
-        existing_list = self.context_manager.get_last_list()
-        if existing_list:
-            # List exists, let normal pronoun resolution handle it
-            return user_text
-        
-        # No list in context - need to infer what to list
-        logger.info(f"🔍 Standalone ordinal detected: '{ordinal}' with no context")
-        
-        # Detect what type of list is needed based on command keywords
-        list_type = None
-        list_command = None
-        
-        # Game-related keywords
-        if any(word in text_lower for word in ['launch', 'play', 'start game', 'open game', 'game']):
-            list_type = 'games'
-            list_command = 'list_games'
-            logger.info(f"📋 Inferred list type: games (detected game-related command)")
-        
-        # App-related keywords
-        elif any(word in text_lower for word in ['open app', 'close app', 'switch to', 'running', 'application']):
-            list_type = 'apps'
-            list_command = 'get_running_applications'
-            logger.info(f"📋 Inferred list type: running apps (detected app-related command)")
-        
-        # Network-related keywords
-        elif any(word in text_lower for word in ['connect', 'wifi', 'network', 'ssid']):
-            list_type = 'networks'
-            list_command = 'list_wifi_networks'
-            logger.info(f"📋 Inferred list type: WiFi networks (detected network command)")
-        
-        # If can't infer, return unchanged
-        if not list_command:
-            logger.warning(f"⚠️ Could not infer list type for ordinal command: '{user_text}'")
-            return user_text
-        
-        # Execute the list command to populate context
-        try:
-            logger.info(f"🔧 Auto-executing {list_command} to resolve ordinal...")
-            result = self.executor.function_registry.call(list_command, {})
-            
-            # Store the result in context
-            self.context_manager.push_action(
-                action=list_command,
-                data={},
-                result=result
-            )
-            
-            logger.info(f"✅ Auto-list result: {result[:100]}...")
-            
-            # Now resolve the ordinal with populated context
-            resolved_item = self.context_manager.resolve_ordinal_reference(user_text)
-            
-            if resolved_item:
-                # Replace ordinal reference with actual item
-                pattern = r'\b(the\s+)?(first|second|third|fourth|fifth|last|previous)(\s+one)?\b'
-                resolved_text = re.sub(pattern, resolved_item, user_text, flags=re.IGNORECASE)
-                logger.info(f"✅ Resolved standalone ordinal: '{user_text}' → '{resolved_text}'")
-                return resolved_text
-            else:
-                logger.warning(f"⚠️ Failed to resolve ordinal after auto-listing: '{user_text}'")
-                return user_text
-                
-        except Exception as e:
-            logger.error(f"❌ Auto-list execution failed for '{list_command}': {e}")
-            return user_text
+        return self.reference_resolver.resolve_standalone_ordinal(user_text)
     
     def _resolve_pronouns(self, user_text: str) -> str:
         """
         Resolve pronouns (it, that, this, them) to actual targets from context.
         This runs BEFORE AI processing to make commands explicit.
         
-        Examples:
-            "Open Chrome" → context stores target='chrome'
-            "Close it" → resolves to "Close chrome"
-            
-            "List games" → context stores list=['Cyberpunk', 'Elden Ring', ...]
-            "Launch the first one" → resolves to "Launch Cyberpunk"
+        Delegates to ReferenceResolver.
         
         Args:
             user_text: Original user input with pronouns
@@ -3989,62 +4083,13 @@ User request: {user_text}"""
         Returns:
             str: Text with pronouns resolved to actual targets
         """
-        text_lower = user_text.lower()
-        
-        # Step 1: Check for ordinal references ("the first one", "second", "last")
-        ordinal_patterns = ['first', 'second', 'third', 'fourth', 'fifth', 'last', 'previous']
-        has_ordinal = any(ordinal in text_lower for ordinal in ordinal_patterns)
-        
-        if has_ordinal:
-            resolved_item = self.context_manager.resolve_ordinal_reference(user_text)
-            if resolved_item:
-                # Replace ordinal reference with actual item
-                import re
-                # Pattern: "the first one", "first one", "the last", etc.
-                pattern = r'\b(the\s+)?(first|second|third|fourth|fifth|last|previous)(\s+one)?\b'
-                resolved_text = re.sub(pattern, resolved_item, user_text, flags=re.IGNORECASE)
-                logger.info(f"✅ Resolved ordinal reference: '{user_text}' → '{resolved_text}'")
-                return resolved_text
-        
-        # Step 2: Check for pronouns ("it", "that", "this", "them")
-        pronouns = ['it', 'that', 'this', 'them', 'those']
-        has_pronoun = any(f' {pronoun} ' in f' {text_lower} ' or 
-                         f' {pronoun},' in f' {text_lower},' or
-                         text_lower.endswith(f' {pronoun}') 
-                         for pronoun in pronouns)
-        
-        if has_pronoun:
-            last_target = self.context_manager.get_last_target()
-            if last_target:
-                # Replace pronouns with actual target
-                import re
-                resolved_text = user_text
-                
-                for pronoun in pronouns:
-                    # Pattern: whole word match (not part of another word)
-                    pattern = r'\b' + pronoun + r'\b'
-                    if re.search(pattern, text_lower):
-                        resolved_text = re.sub(pattern, last_target, resolved_text, flags=re.IGNORECASE)
-                        logger.info(f"✅ Resolved pronoun '{pronoun}' → '{last_target}' in: '{user_text}'")
-                        return resolved_text
-            else:
-                logger.debug(f"⚠️ Pronoun detected but no target in context: '{user_text}'")
-        
-        # Step 3: Check for implicit references ("the folder", "the network", "the game")
-        # These are references to entities by type without explicit naming
-        implicit_references = self._detect_implicit_references(user_text)
-        if implicit_references:
-            resolved_text = self._resolve_implicit_references(user_text, implicit_references)
-            if resolved_text != user_text:
-                logger.info(f"✅ Resolved implicit reference: '{user_text}' → '{resolved_text}'")
-                return resolved_text
-        
-        # No pronouns, ordinals, or implicit references to resolve
-        return user_text
+        return self.reference_resolver.resolve_pronouns(user_text)
     
     def _detect_implicit_references(self, user_text: str) -> Dict[str, str]:
         """
         Detect implicit references in user text (e.g., "the folder", "the network").
+        
+        Delegates to TextProcessor for the actual logic.
         
         Args:
             user_text: User input text
@@ -4052,41 +4097,13 @@ User request: {user_text}"""
         Returns:
             Dict mapping reference type to phrase found
         """
-        text_lower = user_text.lower()
-        detected = {}
-        
-        # Pattern: "the [type]" or "that [type]"
-        import re
-        
-        # Folder references
-        if re.search(r'\b(the|that|this)\s+(folder|directory)\b', text_lower):
-            detected['folder'] = 'folder'
-        
-        # Network references
-        if re.search(r'\b(the|that|this)\s+(network|wifi|ssid)\b', text_lower):
-            detected['network'] = 'network'
-        
-        # Game references
-        if re.search(r'\b(the|that|this)\s+game\b', text_lower):
-            detected['game'] = 'game'
-        
-        # App/Application references
-        if re.search(r'\b(the|that|this)\s+(app|application)\b', text_lower):
-            detected['app'] = 'app'
-        
-        # Screenshot references (common implicit: "where screenshots go")
-        if re.search(r'(where|the)\s+(screenshot|screenshots)\s+(go|are|saved|folder)', text_lower):
-            detected['screenshots_folder'] = 'screenshots folder'
-        
-        # Downloads folder references
-        if re.search(r'(where|the)\s+(download|downloads)\s+(go|are|saved|folder)', text_lower):
-            detected['downloads_folder'] = 'downloads folder'
-        
-        return detected
+        return self.text_processor.detect_implicit_references(user_text)
     
     def _resolve_implicit_references(self, user_text: str, references: Dict[str, str]) -> str:
         """
         Resolve implicit references to actual entities from context.
+        
+        Delegates to ReferenceResolver.
         
         Args:
             user_text: Original user input
@@ -4095,99 +4112,7 @@ User request: {user_text}"""
         Returns:
             str: Text with implicit references resolved
         """
-        resolved_text = user_text
-        
-        # Get action stack for context
-        if not self.context_manager.action_stack:
-            logger.debug("⚠️ No context available for implicit reference resolution")
-            return user_text
-        
-        # Resolve based on reference type
-        for ref_type, ref_phrase in references.items():
-            
-            # Resolve "the folder" to last folder action
-            if ref_type == 'folder':
-                # Look for last folder-related action
-                for action in reversed(self.context_manager.action_stack):
-                    action_name = action.get('action', '')
-                    action_data = action.get('data', {})
-                    
-                    if action_name in ['find_folder', 'open_folder', 'take_screenshot']:
-                        # Extract folder name
-                        if action_name == 'take_screenshot':
-                            folder_name = 'screenshots folder'
-                        else:
-                            folder_name = action_data.get('folder_name') or action_data.get('path', '')
-                        
-                        if folder_name:
-                            # Replace "the folder" with actual folder name
-                            import re
-                            pattern = r'\b(the|that|this)\s+(folder|directory)\b'
-                            resolved_text = re.sub(pattern, folder_name, resolved_text, flags=re.IGNORECASE)
-                            logger.debug(f"📁 Resolved 'the folder' → '{folder_name}'")
-                            break
-            
-            # Resolve "the network" to last network action
-            elif ref_type == 'network':
-                for action in reversed(self.context_manager.action_stack):
-                    action_name = action.get('action', '')
-                    action_data = action.get('data', {})
-                    
-                    if action_name in ['list_wifi_networks', 'connect_wifi', 'get_wifi_status']:
-                        network_name = action_data.get('network_name', '')
-                        if network_name:
-                            import re
-                            pattern = r'\b(the|that|this)\s+(network|wifi|ssid)\b'
-                            resolved_text = re.sub(pattern, network_name, resolved_text, flags=re.IGNORECASE)
-                            logger.debug(f"📡 Resolved 'the network' → '{network_name}'")
-                            break
-            
-            # Resolve "the game" to last game action
-            elif ref_type == 'game':
-                for action in reversed(self.context_manager.action_stack):
-                    action_name = action.get('action', '')
-                    action_data = action.get('data', {})
-                    
-                    if action_name in ['launch_game', 'list_games']:
-                        game_name = action_data.get('game_name', '')
-                        if game_name:
-                            import re
-                            pattern = r'\b(the|that|this)\s+game\b'
-                            resolved_text = re.sub(pattern, game_name, resolved_text, flags=re.IGNORECASE)
-                            logger.debug(f"🎮 Resolved 'the game' → '{game_name}'")
-                            break
-            
-            # Resolve "the app" to last app action
-            elif ref_type == 'app':
-                for action in reversed(self.context_manager.action_stack):
-                    action_name = action.get('action', '')
-                    action_data = action.get('data', {})
-                    
-                    if action_name in ['open_application', 'close_window', 'minimize_window', 'maximize_window']:
-                        app_name = action_data.get('app_name', '')
-                        if app_name:
-                            import re
-                            pattern = r'\b(the|that|this)\s+(app|application)\b'
-                            resolved_text = re.sub(pattern, app_name, resolved_text, flags=re.IGNORECASE)
-                            logger.debug(f"💻 Resolved 'the app' → '{app_name}'")
-                            break
-            
-            # Resolve "where screenshots go" to screenshots folder
-            elif ref_type == 'screenshots_folder':
-                # Replace with explicit folder reference
-                import re
-                pattern = r'(where|the)\s+(screenshot|screenshots)\s+(go|are|saved|folder)'
-                resolved_text = re.sub(pattern, 'screenshots folder', resolved_text, flags=re.IGNORECASE)
-                logger.debug(f"📸 Resolved 'where screenshots go' → 'screenshots folder'")
-            
-            # Resolve "where downloads go" to downloads folder
-            elif ref_type == 'downloads_folder':
-                import re
-                pattern = r'(where|the)\s+(download|downloads)\s+(go|are|saved|folder)'
-                resolved_text = re.sub(pattern, 'downloads folder', resolved_text, flags=re.IGNORECASE)
-                logger.debug(f"📥 Resolved 'where downloads go' → 'downloads folder'")
-        
-        return resolved_text
+        return self.reference_resolver._resolve_implicit_references(user_text, references)
     
     # ============================================================================
     # NEW: Clarification Question System
@@ -4197,6 +4122,8 @@ User request: {user_text}"""
         """
         Detect if command needs clarification due to missing parameters or ambiguity.
         
+        Delegates to ClarificationHandler.
+        
         Args:
             user_text: Original user input
             func_name: Detected function name
@@ -4205,115 +4132,16 @@ User request: {user_text}"""
         Returns:
             Clarification question string or None if no clarification needed
         """
-        text_lower = user_text.lower().strip()
-        
-        # Pattern 1: Vague action verbs without objects
-        vague_commands = {
-            'open': 'What would you like me to open?',
-            'close': 'Which app would you like me to close?',
-            'launch': 'What should I launch?',
-            'start': 'What would you like me to start?',
-            'stop': 'What should I stop?',
-            'show': 'What would you like me to show?',
-            'find': 'What are you looking for?',
-            'search': 'What would you like me to search for?',
-            'play': 'What should I play?',
-        }
-        
-        # Check if user said a vague command alone (e.g., just "open" or "close")
-        for command, question in vague_commands.items():
-            # Match exact command or "can you [command]" without any target
-            if (text_lower == command or 
-                text_lower == f"{command} it" or
-                text_lower == f"can you {command}" or
-                text_lower == f"please {command}"):
-                logger.info(f"❓ Clarification needed: vague command '{command}' without target")
-                return question
-        
-        # Pattern 2: Ambiguous "set" commands without specifying what
-        if text_lower.startswith('set ') or 'set it to' in text_lower or 'set to' in text_lower:
-            # Check if "volume" or "brightness" is mentioned
-            has_target = any(word in text_lower for word in ['volume', 'brightness', 'sound'])
-            if not has_target:
-                logger.info(f"❓ Clarification needed: ambiguous 'set' command")
-                return "Set what? Volume or brightness?"
-        
-        # Pattern 3: Question about "level" without context
-        if any(phrase in text_lower for phrase in ["what's the level", "what is the level", "check the level", "the level"]):
-            has_context = any(word in text_lower for word in ['volume', 'brightness', 'battery'])
-            if not has_context:
-                logger.info(f"❓ Clarification needed: ambiguous 'level' query")
-                return "Which level? Volume, brightness, or battery?"
-        
-        # Pattern 4: Missing required parameters for specific functions
-        if func_name == 'open_application' and not func_params.get('app_name'):
-            # Get currently running apps for suggestion
-            try:
-                running_apps = self.executor.get_running_applications()
-                if running_apps and len(running_apps) < 100:  # Reasonable length
-                    # Extract app names (first 5)
-                    import re
-                    match = re.search(r'Running:?\s*(.+)', running_apps, re.IGNORECASE)
-                    if match:
-                        apps_str = match.group(1).strip()
-                        apps = [a.strip() for a in apps_str.split(',')[:5]]
-                        app_list = ', '.join(apps)
-                        return f"Which app would you like to open? (Currently running: {app_list})"
-            except:
-                pass
-            return "Which application would you like to open?"
-        
-        if func_name == 'close_window' and not func_params.get('app_name'):
-            # Suggest from running apps
-            try:
-                running_apps = self.executor.get_running_applications()
-                if running_apps:
-                    import re
-                    match = re.search(r'Running:?\s*(.+)', running_apps, re.IGNORECASE)
-                    if match:
-                        apps_str = match.group(1).strip()
-                        apps = [a.strip() for a in apps_str.split(',')[:5]]
-                        app_list = ', '.join(apps)
-                        return f"Which app would you like to close? (Currently running: {app_list})"
-            except:
-                pass
-            return "Which application would you like to close?"
-        
-        if func_name == 'launch_game' and not func_params.get('game_name'):
-            return "Which game would you like to launch?"
-        
-        if func_name == 'connect_wifi' and not func_params.get('network_name'):
-            # Try to get available networks
-            try:
-                networks = self.executor.list_wifi_networks()
-                if networks and 'Available' in networks:
-                    import re
-                    match = re.search(r'(?:Available|Found)[^:]*:\s*(.+)', networks, re.IGNORECASE)
-                    if match:
-                        networks_str = match.group(1).strip()
-                        nets = [n.strip() for n in networks_str.split(',')[:5]]
-                        net_list = ', '.join(nets)
-                        return f"Which network should I connect to? (Available: {net_list})"
-            except:
-                pass
-            return "Which WiFi network would you like to connect to?"
-        
-        if func_name == 'set_volume' and 'level' not in func_params:
-            return "What volume level? (0-100)"
-        
-        if func_name == 'set_brightness' and 'level' not in func_params:
-            return "What brightness level? (0-100)"
-        
-        if func_name == 'find_folder' and not func_params.get('folder_name'):
-            return "Which folder are you looking for?"
-        
-        # No clarification needed
-        return None
+        # Store current command so clarification handler can save it with the question
+        self.clarification_handler.set_current_command(user_text)
+        return self.clarification_handler.requires_clarification(user_text, func_name, func_params)
     
     def _ask_clarification(self, question: str) -> str:
         """
         Store clarification question as pending and return it to user.
         This puts Nexa in a "waiting for answer" state.
+        
+        Delegates to ClarificationHandler.
         
         Args:
             question: Clarification question to ask user
@@ -4321,17 +4149,131 @@ User request: {user_text}"""
         Returns:
             The question string
         """
-        # Store in context that we're waiting for clarification
-        self.context_manager.set_preference('system', 'awaiting_clarification', True)
-        self.context_manager.set_preference('system', 'last_clarification_question', question)
+        return self.clarification_handler.ask_clarification(question)
+    
+    def _handle_pending_intent(self, user_text: str) -> Optional[str]:
+        """
+        Handle user response to a pending intent (e.g., song name after "play a song").
         
-        logger.info(f"❓ Asking clarification: {question}")
-        return question
+        Checks if there's a pending intent and processes the user's response.
+        For play_music: executes play_music with the provided song name.
+        
+        Args:
+            user_text: User's response
+            
+        Returns:
+            Result string if handled, None if not a pending intent response
+        """
+        try:
+            # Get pending intent from IntentState (preferred) or legacy pending_action
+            intent_type = None
+            
+            # Check IntentState first
+            if hasattr(self.context_manager, 'intent_state') and self.context_manager.intent_state:
+                pending_intent = self.context_manager.intent_state.get_pending_intent()
+                if pending_intent:
+                    intent_type = pending_intent.intent
+                    logger.info(f"🎯 Found IntentState pending: {intent_type}")
+            
+            # Fallback to legacy pending_action (without clearing it yet)
+            if not intent_type and self.context_manager.has_pending_action():
+                pending = self.context_manager.pending_action  # Access directly, don't clear yet
+                intent_type = pending.get('type', '')
+                logger.info(f"🎯 Found legacy pending action: {intent_type}")
+            
+            if not intent_type:
+                return None
+            
+            user_lower = user_text.lower().strip()
+            
+            logger.info(f"🎯 Processing pending intent: {intent_type}, user said: '{user_text}'")
+            
+            # Helper to clear pending state
+            def clear_pending():
+                self.context_manager.clear_follow_up()  # Clears IntentState + legacy
+            
+            # Check for cancellation
+            cancel_words = ['cancel', 'nevermind', 'never mind', 'forget it', 'stop', 'no']
+            if any(word in user_lower for word in cancel_words):
+                clear_pending()
+                logger.info("❌ User cancelled pending intent")
+                return "Okay, cancelled."
+            
+            # Handle play_music pending intent
+            if intent_type == 'play_music':
+                # Check for random/shuffle keywords
+                if user_lower in ['random', 'shuffle', 'anything', 'surprise me', 'whatever']:
+                    clear_pending()
+                    result = self.executor.music_manager.play_random()
+                    logger.info(f"🎵 Playing random song: {result}")
+                    return result
+                
+                # Check for "list songs" request
+                if 'list' in user_lower and ('song' in user_lower or 'music' in user_lower):
+                    clear_pending()
+                    result = self.executor.list_music(limit=10)
+                    logger.info(f"🎵 Listing songs: {result}")
+                    return result
+                
+                # Treat the input as a song name
+                clear_pending()
+                result = self.executor.music_manager.play_song(song_name=user_text)
+                logger.info(f"🎵 Playing song '{user_text}': {result}")
+                return result
+            
+            # Handle proactive_suggestion - user is responding to a proactive offer
+            # Pass the CONTEXT to LLM so it understands what "do it" / "yes" means
+            if intent_type == 'proactive_suggestion':
+                # Reset proactive listening flag since user responded
+                if self.listener:
+                    self.listener.proactive_listening = False
+                
+                # Get the pending suggestion from proactive engine
+                pending_suggestion = None
+                if self.proactive_engine:
+                    pending_suggestion = self.proactive_engine.get_pending_suggestion()
+                
+                # Get the original suggestion message from IntentState
+                original_suggestion = ""
+                if pending_intent:
+                    original_suggestion = pending_intent.original_command or pending_intent.clarification_question
+                
+                if not original_suggestion and pending_suggestion:
+                    original_suggestion = pending_suggestion.message
+                
+                clear_pending()
+                if pending_suggestion:
+                    self.proactive_engine.clear_pending()
+                
+                if not original_suggestion:
+                    logger.warning("💜 Proactive response but no context found - passing to LLM")
+                    return None
+                
+                # Build a contextualized prompt for LLM
+                # The LLM will understand "please do it" in context of what was suggested
+                contextualized_input = f'[NEXA just said: "{original_suggestion}"] User replied: "{user_text}"'
+                
+                logger.info(f"💜 Proactive follow-up: {contextualized_input}")
+                
+                # Return None but inject the context into the user text
+                # This will be processed by normal LLM flow with full context
+                return ("__PROACTIVE_CONTEXT__", contextualized_input)
+            
+            # Unknown intent type - clear and let normal processing handle it
+            logger.warning(f"⚠️ Unknown pending intent type: {intent_type}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error handling pending intent: {e}")
+            self.context_manager.clear_follow_up()
+            return None
     
     def _check_clarification_response(self, user_text: str) -> Optional[str]:
         """
         Check if user is responding to a clarification question.
         If yes, reformulate the command with the provided information.
+        
+        Delegates to ClarificationHandler.
         
         Args:
             user_text: User's response
@@ -4339,89 +4281,7 @@ User request: {user_text}"""
         Returns:
             Reformulated command or None if not a clarification response
         """
-        awaiting = self.context_manager.get_preference('system', 'awaiting_clarification', False)
-        if not awaiting:
-            return None
-        
-        last_question = self.context_manager.get_preference('system', 'last_clarification_question', '')
-        
-        # Clear the clarification state
-        self.context_manager.set_preference('system', 'awaiting_clarification', False)
-        
-        # Reformulate command based on the original question
-        text_lower = user_text.lower().strip()
-        
-        # If last question was about what to open/close/etc.
-        if 'open' in last_question.lower():
-            # User answered with app name
-            reformulated = f"open {user_text}"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        elif 'close' in last_question.lower():
-            reformulated = f"close {user_text}"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        elif 'launch' in last_question.lower():
-            reformulated = f"launch {user_text}"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        elif 'volume or brightness' in last_question.lower():
-            # User specified which setting
-            if 'volume' in text_lower:
-                reformulated = f"what's the volume level"
-                logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-                return reformulated
-            elif 'brightness' in text_lower or 'bright' in text_lower:
-                reformulated = f"what's the brightness level"
-                logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-                return reformulated
-        
-        elif 'set what' in last_question.lower():
-            # User responded to "Set what? Volume or brightness?"
-            # Extract the target and value from response
-            if 'volume' in text_lower:
-                # Look for number in user response
-                import re
-                number_match = re.search(r'\d+', user_text)
-                if number_match:
-                    level = number_match.group()
-                    reformulated = f"set volume to {level}"
-                else:
-                    reformulated = "get volume"
-                logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-                return reformulated
-            elif 'brightness' in text_lower or 'bright' in text_lower:
-                import re
-                number_match = re.search(r'\d+', user_text)
-                if number_match:
-                    level = number_match.group()
-                    reformulated = f"set brightness to {level}"
-                else:
-                    reformulated = "get brightness"
-                logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-                return reformulated
-        
-        elif 'network' in last_question.lower() or 'wifi' in last_question.lower():
-            reformulated = f"connect to {user_text}"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        elif 'folder' in last_question.lower():
-            reformulated = f"find {user_text} folder"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        elif 'game' in last_question.lower():
-            reformulated = f"launch {user_text}"
-            logger.info(f"✅ Reformulated from clarification: '{user_text}' → '{reformulated}'")
-            return reformulated
-        
-        # If we can't reformulate, just process the user's answer as-is
-        logger.debug(f"⚠️ Could not reformulate clarification response, processing as new command")
-        return None
+        return self.clarification_handler.check_clarification_response(user_text)
     
     # ============================================================================
     # NEW: Optimized Follow-up Question System (Use Cached Data)
@@ -4431,25 +4291,21 @@ User request: {user_text}"""
         """
         Detect if user is asking for a count ("how many?", "what's the count?").
         
+        Delegates to TextProcessor for the actual logic.
+        
         Args:
             user_text: User input
             
         Returns:
             True if counting question detected
         """
-        text_lower = user_text.lower().strip()
-        
-        counting_patterns = [
-            'how many', 'how much', "what's the count", "what is the count",
-            'total number', 'count them', 'quantity', 'number of',
-            'how many are there', 'how much are there',
-        ]
-        
-        return any(pattern in text_lower for pattern in counting_patterns)
+        return self.text_processor.is_counting_question(user_text)
     
     def _is_listing_question(self, user_text: str) -> bool:
         """
         Detect if user wants details/names ("what are they?", "list them").
+        
+        Delegates to TextProcessor for the actual logic.
         
         Args:
             user_text: User input
@@ -4457,23 +4313,14 @@ User request: {user_text}"""
         Returns:
             True if listing question detected
         """
-        text_lower = user_text.lower().strip()
-        
-        listing_patterns = [
-            'what are they', 'what are those', 'which ones', 'what were they',
-            'list them', 'show them', 'name them', 'tell me their names',
-            'what are the names', 'give me the names', 'show me the list',
-            'enumerate them', 'show all', 'list all', 'give me all',
-            'the names', 'their names', 'show names', 'full list',
-            'complete list', 'what did you find', 'show results',
-        ]
-        
-        return any(pattern in text_lower for pattern in listing_patterns)
+        return self.text_processor.is_listing_question(user_text)
     
     def _answer_from_cache(self, user_text: str, last_action: str, last_result: Any) -> Optional[str]:
         """
         Answer follow-up questions using cached data instead of re-executing.
         Significantly faster and reduces redundant operations.
+        
+        Delegates to ResponseCache for the actual logic.
         
         Args:
             user_text: User's follow-up question
@@ -4483,134 +4330,9 @@ User request: {user_text}"""
         Returns:
             Answer from cache or None if can't answer from cache
         """
-        if not last_result:
-            return None
-        
-        # Convert result to string if needed
-        result_str = str(last_result) if not isinstance(last_result, str) else last_result
-        
-        # PATTERN 1: Counting questions ("how many?")
-        if self._is_counting_question(user_text):
-            logger.info(f"📊 Counting question detected - answering from cache")
-            
-            # Extract count from result string
-            import re
-            
-            # Try to find "Found X items" or "X games" patterns
-            count_patterns = [
-                r'Found (\d+)',
-                r'(\d+) games',
-                r'(\d+) apps',
-                r'(\d+) applications',
-                r'(\d+) networks',
-                r'Running:\s*([^\.]+)',  # Count items after "Running:"
-            ]
-            
-            for pattern in count_patterns:
-                match = re.search(pattern, result_str, re.IGNORECASE)
-                if match:
-                    if 'Running:' in pattern:
-                        # Count comma-separated items
-                        items = match.group(1).split(',')
-                        count = len([item.strip() for item in items if item.strip()])
-                    else:
-                        count = match.group(1)
-                    
-                    logger.info(f"✅ Answered from cache: count = {count}")
-                    
-                    # Contextualize the answer
-                    if 'game' in last_action:
-                        return f"{count} games"
-                    elif 'app' in last_action or 'running' in last_action:
-                        return f"{count} applications running"
-                    elif 'wifi' in last_action or 'network' in last_action:
-                        return f"{count} networks available"
-                    else:
-                        return f"{count}"
-            
-            # Fallback: try to get list and count items
-            last_list = self.context_manager.get_last_list()
-            if last_list:
-                count = len(last_list)
-                logger.info(f"✅ Answered from cache (list count): {count}")
-                if 'game' in last_action:
-                    return f"{count} games"
-                elif 'app' in last_action:
-                    return f"{count} applications"
-                elif 'network' in last_action:
-                    return f"{count} networks"
-                else:
-                    return f"{count} items"
-        
-        # PATTERN 2: Listing questions ("what are they?")
-        if self._is_listing_question(user_text):
-            logger.info(f"📋 Listing question detected - answering from cache")
-            
-            # Try to get list from context
-            last_list = self.context_manager.get_last_list()
-            if last_list:
-                logger.info(f"✅ Answered from cache: {len(last_list)} items from list")
-                
-                # Format based on count
-                if len(last_list) <= 5:
-                    # Read all names
-                    return ", ".join(last_list)
-                elif len(last_list) <= 10:
-                    # Read first 8, mention rest
-                    listed = ", ".join(last_list[:8])
-                    return f"{listed}, and {len(last_list) - 8} more"
-                else:
-                    # Read first 5, summarize rest
-                    listed = ", ".join(last_list[:5])
-                    return f"{listed}, and {len(last_list) - 5} others"
-            
-            # Fallback: extract from result string
-            import re
-            
-            # Look for comma-separated lists in result
-            list_patterns = [
-                r':\s*(.+)',  # After colon (e.g., "Found 5 games: Game1, Game2")
-                r'Running:\s*(.+)',  # After "Running:"
-                r'Available:\s*(.+)',  # After "Available:"
-            ]
-            
-            for pattern in list_patterns:
-                match = re.search(pattern, result_str, re.IGNORECASE)
-                if match:
-                    items_str = match.group(1).strip()
-                    # Split by comma
-                    items = [item.strip() for item in items_str.split(',') if item.strip()]
-                    
-                    if items:
-                        logger.info(f"✅ Answered from cache (extracted list): {len(items)} items")
-                        
-                        # Format based on count
-                        if len(items) <= 5:
-                            return ", ".join(items)
-                        elif len(items) <= 10:
-                            listed = ", ".join(items[:8])
-                            return f"{listed}, and {len(items) - 8} more"
-                        else:
-                            listed = ", ".join(items[:5])
-                            return f"{listed}, and {len(items) - 5} others"
-        
-        # PATTERN 3: "What platform?" for games
-        if 'platform' in user_text.lower() and 'game' in last_action:
-            # Extract platforms from result
-            import re
-            platforms_found = set()
-            for platform in ['Steam', 'Epic', 'GOG', 'Xbox', 'Origin']:
-                if platform in result_str:
-                    platforms_found.add(platform)
-            
-            if platforms_found:
-                platforms_list = ', '.join(sorted(platforms_found))
-                logger.info(f"✅ Answered from cache: platforms = {platforms_list}")
-                return f"Platforms: {platforms_list}"
-        
-        # Can't answer from cache
-        logger.debug(f"⚠️ Cannot answer from cache for: '{user_text}'")
-        return None
+        return self.response_cache.answer_from_cache(
+            user_text, last_action, last_result, self.context_manager
+        )
     
     # ============================================================================
     
@@ -4618,72 +4340,187 @@ User request: {user_text}"""
         """
         Categorize function by type for follow-up correction.
         
+        Delegates to FunctionValidator for the actual logic.
+        
         Args:
             func_name: Name of the function
             
         Returns:
             Category string (info_query, app_control, system_setting, etc.)
         """
-        # Information query functions (return data to user)
-        info_functions = [
-            'get_current_time', 'get_battery_status', 'get_battery_percentage',
-            'get_wifi_status', 'get_running_applications', 'is_application_running',
-            'list_games', 'list_wifi_networks', 'get_saved_wifi_profiles',
-            'get_active_window', 'read_notifications', 'read_screen_content',
-            'describe_screen', 'find_folder', 'get_current_volume', 'get_current_brightness'
-        ]
+        return self.function_validator.get_function_category(func_name)
+    
+    # ============================================================================
+    # PHASE 29: PROACTIVE ENGAGEMENT METHODS
+    # ============================================================================
+    
+    def _on_proactive_opportunity(self, idle_duration: float, idle_state) -> bool:
+        """
+        Callback when a proactive engagement opportunity is detected.
         
-        # Application control functions (manage apps)
-        app_control = ['open_application', 'close_application', 'is_application_running']
+        Args:
+            idle_duration: How long user has been idle (seconds)
+            idle_state: Current IdleState enum
+            
+        Returns:
+            True if suggestion was made, False otherwise
+        """
+        logger.info(f"💜 Proactive opportunity callback: idle={idle_duration:.1f}s, state={idle_state}")
         
-        # Window management functions
-        window_mgmt = [
-            'maximize_window', 'minimize_window', 'restore_window', 
-            'move_window', 'resize_window', 'get_active_window'
-        ]
+        if not self.proactive_engine or not self.enable_proactive:
+            logger.warning("❌ Proactive engine or flag disabled")
+            return False
         
-        # System settings functions (change state)
-        system_settings = [
-            'set_volume', 'increase_volume', 'decrease_volume',
-            'set_brightness', 'increase_brightness', 'decrease_brightness',
-            'mute_volume', 'unmute_volume'
-        ]
+        try:
+            # Don't interrupt if we're not in IDLE state
+            if self.state != NexaState.IDLE:
+                logger.debug("Not in IDLE state, skipping proactive")
+                return False
+            
+            # Build context
+            session_duration = self.idle_monitor.get_session_duration() if self.idle_monitor else 0
+            interaction_count = self.idle_monitor.stats.total_interactions if self.idle_monitor else 0
+            
+            logger.info(f"💜 Building proactive context: session={session_duration:.0f}s, interactions={interaction_count}")
+            
+            context = self.proactive_engine.build_context(
+                idle_duration=idle_duration,
+                session_duration=session_duration,
+                interaction_count=interaction_count
+            )
+            
+            logger.info(f"💜 Context built: time_of_day={context.time_of_day}, hour={context.current_hour}")
+            
+            # Decide what to suggest
+            suggestion = self.proactive_engine.decide_suggestion(context)
+            
+            if suggestion:
+                # Speak the proactive suggestion
+                logger.info("🎯 Making proactive suggestion: %s", suggestion.message)
+                
+                # Enable proactive listening mode - bypass wake word for user's response
+                if self.listener:
+                    self.listener.set_proactive_listening(True)
+                
+                # Speak the suggestion (this will transition to SPEAKING, then LISTENING)
+                self._speak_response(suggestion.message)
+                
+                # Mark that this came from proactive (for function calls)
+                if hasattr(self.context_manager, 'intent_state') and self.context_manager.intent_state:
+                    # Set a pending intent for the proactive suggestion
+                    self.context_manager.intent_state.set_pending_intent(
+                        intent="proactive_suggestion",
+                        data_needed="user_response",
+                        original_command=suggestion.message,
+                        clarification_question=suggestion.message
+                    )
+                
+                return True
+            
+            logger.info("💜 No proactive suggestion generated (no matching criteria)")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error in proactive opportunity: {e}")
+            return False
+    
+    def _record_user_interaction(self):
+        """Record that a user interaction occurred (for idle tracking)."""
+        if self.idle_monitor and self.enable_proactive:
+            self.idle_monitor.record_interaction()
+    
+    def _record_activity_pattern(self, activity: str, category: str = "command"):
+        """
+        Record an activity for pattern learning.
         
-        # Network functions
-        network_ops = [
-            'disconnect_wifi', 'connect_wifi', 'list_wifi_networks', 
-            'get_saved_wifi_profiles', 'get_wifi_status'
-        ]
+        Args:
+            activity: The activity performed (e.g., "open_application")
+            category: Category of activity
+        """
+        if self.pattern_learner and self.enable_proactive:
+            try:
+                self.pattern_learner.record_activity(activity, category)
+            except Exception as e:
+                logger.debug(f"Pattern recording failed: {e}")
+    
+    def _check_listening_timeout(self):
+        """
+        Check if listening should timeout and return to IDLE.
+        Called by QTimer every 5 seconds.
+        """
+        import time
         
-        # Screen capture/analysis
-        screen_ops = [
-            'take_screenshot', 'read_screen_content', 'describe_screen',
-            'read_notifications'
-        ]
+        # Only check when in LISTENING state
+        if self.state != NexaState.LISTENING:
+            return
         
-        # File/folder operations
-        file_ops = ['find_folder', 'search_files']
+        # Calculate time remaining
+        if self.listener and self.listener.last_valid_command_time:
+            elapsed = time.time() - self.listener.last_valid_command_time
+            
+            # Different timeout for proactive mode
+            if self.listener.proactive_listening:
+                proactive_timeout = 30.0
+                remaining = proactive_timeout - elapsed
+                if remaining > 0:
+                    logger.info(f"💜 PROACTIVE LISTENING: {remaining:.0f}s remaining for response")
+            else:
+                remaining = self._listening_timeout_duration - elapsed
+                if remaining > 0:
+                    logger.info(f"⏱️ LISTENING: {remaining:.0f}s remaining until IDLE")
+            
+        # Check if listener has timed out
+        if self.listener and self.listener.check_listening_timeout():
+            logger.info("⏰ Listening timed out - transitioning to IDLE state")
+            
+            # In wake word mode, keep listener running in passive mode
+            # so it can still detect the wake word while IDLE
+            if self.listener.wake_word_enabled:
+                logger.info("🎤 Wake word mode: Listener stays active for wake word detection")
+                # Set passive mode - only wake word will activate
+                self.listener.set_passive_mode(True)
+                self.listener.wake_word_active = False
+            else:
+                # Without wake word, fully stop listening
+                self.listener.stop_listening()
+            
+            self._change_state(NexaState.IDLE)
+            
+            # NOTE: Do NOT call record_interaction() here!
+            # Timeout means the user STOPPED interacting — recording an interaction
+            # would reset idle time to zero, defeating the proactive engine.
+            # The idle_monitor already tracks from the last real interaction.
+    
+    def _check_proactive_opportunity(self):
+        """
+        Periodically check if we should make a proactive suggestion.
+        Called by QTimer every 60 seconds.
+        """
+        import time
         
-        # Gaming functions
-        gaming = ['list_games']
+        # Reset proactive timer tracking
+        self._proactive_timer_start = time.time()
         
-        # Categorize
-        if func_name in info_functions:
-            return 'info_query'
-        elif func_name in app_control:
-            return 'app_control'
-        elif func_name in window_mgmt:
-            return 'window_mgmt'
-        elif func_name in system_settings:
-            return 'system_setting'
-        elif func_name in network_ops:
-            return 'network'
-        elif func_name in screen_ops:
-            return 'screen'
-        elif func_name in file_ops:
-            return 'file'
-        elif func_name in gaming:
-            return 'gaming'
+        # Only check when in IDLE state
+        if self.state != NexaState.IDLE:
+            logger.info(f"💜 Proactive check: SKIPPED (state={self.state.value}, need IDLE)")
+            return
+        
+        if not self.enable_proactive or not self.idle_monitor:
+            logger.debug("⏸️ Proactive skipped: disabled or no idle_monitor")
+            return
+        
+        # Update idle state and get timing info
+        self.idle_monitor.update_state()
+        idle_duration = self.idle_monitor.get_idle_duration()
+        idle_state = self.idle_monitor.get_idle_state()
+        
+        logger.info(f"💜 Proactive check: IDLE for {idle_duration:.0f}s ({idle_state.value}), next check in {self._proactive_interval:.0f}s")
+        
+        # Check if we can trigger proactive
+        if self.idle_monitor.can_trigger_proactive():
+            logger.info("💜 ✨ Triggering proactive suggestion!")
+            self.idle_monitor.trigger_proactive_opportunity()
         else:
-            return 'other'
+            logger.debug("⏸️ Proactive not triggered (conditions not met)")
 

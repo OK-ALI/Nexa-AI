@@ -170,3 +170,64 @@ The file must be:
 ---
 
 This file provides the complete explanation for implementing Nexa's dynamic intent-follow-up system.
+
+---
+
+## 8. Ordinal Resolution (List Follow-ups)
+
+**Added:** January 1, 2026
+
+Nexa supports ordinal references like "the first one", "the third one", "the last one" for any list command.
+
+### How It Works
+
+1. **User lists something:** "List my games", "Show my songs", "What apps are running?"
+2. **Nexa stores the list** in `IntentState._last_list`
+3. **User uses ordinal:** "Open the third one", "Play the second one"
+4. **Nexa resolves ordinal** to actual item name
+
+### Supported Ordinals
+
+| Ordinal | Index |
+|---------|-------|
+| first, 1st | 0 |
+| second, 2nd | 1 |
+| third, 3rd | 2 |
+| fourth, 4th | 3 |
+| fifth, 5th | 4 |
+| last | -1 |
+| previous | -2 |
+
+### Supported List Types
+
+| List Command | Follow-up Example |
+|--------------|-------------------|
+| `list_games` | "Open the third one" |
+| `list_music` | "Play the second one" |
+| `get_running_applications` | "Close the last one" |
+| `list_wifi_networks` | "Connect to the first one" |
+
+### Data Storage Keys
+
+The system checks these keys when syncing lists to `IntentState`:
+- `games`, `songs`, `apps`, `applications`, `networks`, `files`, `items`, `list`, `results`
+
+### Technical Flow
+
+```
+User: "List my games"
+  ↓
+Executor calls: list_games()
+  ↓
+context_manager.set_last_action('list_games', {'games': ['TEKKEN 8', 'Elden Ring', ...]})
+  ↓
+IntentState._last_list = ['TEKKEN 8', 'Elden Ring', ...]
+  ↓
+User: "Open the third one"
+  ↓
+get_last_list() → returns IntentState._last_list
+  ↓
+resolve_ordinal('third') → index 2 → 'Elden Ring'
+  ↓
+Nexa opens 'Elden Ring'
+```

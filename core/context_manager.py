@@ -1,14 +1,31 @@
 """
 Context Manager - Local Memory and Conversation History
 Manages conversation context, user preferences, and persistent storage.
+
+Now integrated with Smart Memory (LanceDB + Embeddings) for:
+- Semantic conversation storage
+- Dynamic follow-up resolution
+- Intent state management
 """
 
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from threading import RLock
+
+# Smart Memory imports (Phase 19)
+try:
+    from .smart_memory import (
+        SmartMemoryManager, 
+        ContextConstructor, 
+        IntentState
+    )
+    from .smart_memory.intelligent_learner import get_intelligent_learner, IntelligentLearner
+    SMART_MEMORY_AVAILABLE = True
+except ImportError:
+    SMART_MEMORY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +50,7 @@ class ContextManager:
         # Thread-safe access to memory (using RLock to allow reentrant calls)
         self._lock = RLock()
         
-        # In-memory storage
+        # In-memory storage (LEGACY - kept for fallback)
         self.conversation_history: List[Dict[str, Any]] = []
         self.user_preferences: Dict[str, Any] = {}
         
@@ -47,7 +64,58 @@ class ContextManager:
         # NEW: Action stack for multi-step context (stores last 5 actions)
         self.action_stack: List[Dict[str, Any]] = []
         
-        # Load existing data
+        # =====================================================================
+        # SMART MEMORY INTEGRATION (Phase 19)
+        # =====================================================================
+        self.smart_memory: Optional[SmartMemoryManager] = None
+        self.context_constructor: Optional[ContextConstructor] = None
+        self.intent_state: Optional[IntentState] = None
+        self.intelligent_learner: Optional[IntelligentLearner] = None
+        
+        # Store data_dir for use in personal knowledge seeding
+        self.data_dir = config.data_dir
+        
+        if SMART_MEMORY_AVAILABLE:
+            try:
+                # Initialize Smart Memory with data directory
+                self.smart_memory = SmartMemoryManager(self.data_dir)
+                self.context_constructor = ContextConstructor(self.smart_memory)
+                self.intent_state = IntentState(
+                    state_file=self.data_dir / 'intent_state.json'
+                )
+                
+                # Initialize Intelligent Learner for auto-learning from conversations
+                self.intelligent_learner = get_intelligent_learner(self.smart_memory)
+                logger.info("🧠 Intelligent Learner initialized - auto-learning enabled")
+                
+                # Start a new session for this run
+                session_id = self.smart_memory.start_session()
+                logger.info(f"🧠 Smart Memory initialized with session: {session_id}")
+                
+                # Seed personal knowledge from user_prefs.json
+                self._seed_personal_knowledge()
+                
+                # Preload embedding model in background to avoid delay on first command
+                import threading
+                def preload_embeddings():
+                    try:
+                        from core.smart_memory.embedding_engine import get_embedding_engine
+                        engine = get_embedding_engine()
+                        # Trigger lazy load with a dummy embed
+                        engine.embed("preload")
+                        logger.info("🧠 Embedding model preloaded in background")
+                    except Exception as e:
+                        logger.warning(f"Embedding preload failed (non-critical): {e}")
+                
+                threading.Thread(target=preload_embeddings, daemon=True).start()
+                
+            except Exception as e:
+                logger.error(f"❌ Smart Memory init failed: {e}")
+                self.smart_memory = None
+        else:
+            logger.warning("⚠️ Smart Memory not available, using legacy storage")
+        
+        # Load existing data (legacy)
         self._load_memory()
         self._load_preferences()
         
@@ -116,6 +184,124 @@ class ContextManager:
             }
         }
     
+    def refresh_personal_knowledge(self):
+        """
+        Refresh personal knowledge from user_prefs.json.
+        Call this after adding new personal info to force re-seeding.
+        """
+        # Reload user preferences
+        self._load_preferences()
+        
+        # Force re-seed (delete marker and seed again)
+        seeded_marker = self.data_dir / ".knowledge_seeded"
+        if seeded_marker.exists():
+            seeded_marker.unlink()
+        
+        self._seed_personal_knowledge(force=True)
+        logger.info("💜 Personal knowledge refreshed!")
+    
+    def _seed_personal_knowledge(self, force: bool = False):
+        """
+        Seed Smart Memory with personal knowledge from user_prefs.json.
+        This runs once on startup to ensure NEXA knows about important people and facts.
+        
+        Args:
+            force: If True, re-seed even if already done (use when user_prefs.json changes)
+        """
+        if not self.smart_memory:
+            logger.warning("⚠️ Cannot seed knowledge - Smart Memory not available")
+            return
+            
+        try:
+            # Check if we've already seeded (to avoid duplicates)
+            seeded_marker = self.data_dir / ".knowledge_seeded"
+            
+            # Load personal info from user_prefs.json
+            personal = self.user_preferences.get('personal', {})
+            relationships = personal.get('relationships', {})
+            user_info = personal.get('user_info', {})
+            
+            logger.info(f"💜 Checking personal knowledge: {len(relationships)} relationships, user_info={bool(user_info)}")
+            
+            # Skip if already seeded (unless forced)
+            if seeded_marker.exists() and not force:
+                logger.info("💜 Personal knowledge already seeded (marker exists), skipping")
+                return
+            
+            if not relationships and not user_info:
+                logger.info("💜 No personal data to seed (empty relationships and user_info)")
+                return
+            
+            facts_seeded = 0
+            
+            # Seed user info
+            if user_info:
+                user_name = user_info.get('name', 'the user')
+                if user_info.get('university'):
+                    fact = f"{user_name} studied at {user_info['university']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='education')
+                    facts_seeded += 1
+                    logger.debug(f"💜 Seeded: {fact}")
+                if user_info.get('location'):
+                    fact = f"{user_name} is from {user_info['location']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='personal')
+                    facts_seeded += 1
+                    logger.debug(f"💜 Seeded: {fact}")
+            
+            # Seed relationships
+            for person_key, person_info in relationships.items():
+                name = person_info.get('name', person_key)
+                relationship = person_info.get('relationship', 'friend')
+                user_name = user_info.get('name', 'the user')
+                
+                # Multiple phrasings for better semantic matching with ANY relationship type
+                relationship_facts = [
+                    f"{name} is {user_name}'s {relationship}",
+                    f"{user_name}'s {relationship} is {name}",
+                    f"My {relationship} is {name}",
+                    f"{name} is my {relationship}",
+                ]
+                for fact in relationship_facts:
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='relationships')
+                    facts_seeded += 1
+                logger.info(f"💜 Seeded relationship: {name} ({relationship})")
+                
+                # Birthday
+                if person_info.get('birthday'):
+                    fact = f"{name}'s birthday is on {person_info['birthday']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='relationships')
+                    facts_seeded += 1
+                
+                # Location
+                if person_info.get('location'):
+                    fact = f"{name} lives in {person_info['location']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='relationships')
+                    facts_seeded += 1
+                
+                # Education
+                if person_info.get('education'):
+                    fact = f"{name} studies at {person_info['education']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='education')
+                    facts_seeded += 1
+                
+                # Connection/special notes
+                if person_info.get('connection'):
+                    fact = f"{user_name} and {name}: {person_info['connection']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='relationships')
+                    facts_seeded += 1
+                
+                if person_info.get('special_notes'):
+                    fact = f"About {name}: {person_info['special_notes']}"
+                    self.smart_memory.learn_fact(fact, source='user_stated', confidence=1.0, category='relationships')
+                    facts_seeded += 1
+            
+            # Mark as seeded to avoid duplicates on next startup
+            seeded_marker.touch()
+            logger.info(f"💜 ✅ Seeded {facts_seeded} personal knowledge facts ({len(relationships)} relationships)")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to seed personal knowledge: {e}", exc_info=True)
+    
     def _save_memory(self):
         """Save conversation history to disk. Must be called from within locked context."""
         try:
@@ -136,13 +322,14 @@ class ContextManager:
         except Exception as e:
             logger.error(f"Error saving preferences: {e}")
     
-    def add_interaction(self, user_message: str, nexa_response: str):
+    def add_interaction(self, user_message: str, nexa_response: str, success: bool = True):
         """
         Add a new conversation interaction.
         
         Args:
             user_message: User's input
             nexa_response: Nexa's response (can be empty initially)
+            success: Whether the action succeeded
         """
         with self._lock:
             # Skip storing useless/duplicate conversations
@@ -150,6 +337,43 @@ class ContextManager:
                 logger.debug(f"Skipping low-value interaction: '{user_message[:30]}'")
                 return
             
+            # ===== SMART MEMORY STORAGE (ASYNC - non-blocking) =====
+            if self.smart_memory:
+                # Store in background to avoid blocking LLM processing
+                import threading
+                def store_async():
+                    try:
+                        self.smart_memory.store_memory(
+                            user_message=user_message,
+                            nexa_response=nexa_response,
+                            success=success
+                        )
+                        logger.debug(f"💾 Stored in LanceDB: '{user_message[:30]}...'")
+                    except Exception as e:
+                        logger.error(f"LanceDB store failed: {e}")
+                
+                threading.Thread(target=store_async, daemon=True).start()
+            
+            # ===== INTELLIGENT LEARNING (ASYNC - auto-extract facts) =====
+            if self.intelligent_learner:
+                import threading
+                def learn_async():
+                    try:
+                        facts_learned = self.intelligent_learner.learn_from_conversation(
+                            user_message=user_message,
+                            nexa_response=nexa_response,
+                            store_immediately=True
+                        )
+                        if facts_learned > 0:
+                            logger.info(f"🧠 Auto-learned {facts_learned} fact(s) from conversation")
+                    except Exception as e:
+                        logger.error(f"Intelligent learning failed: {e}")
+                
+                threading.Thread(target=learn_async, daemon=True).start()
+            
+            # ===== IN-MEMORY CACHE (for legacy API compatibility) =====
+            # Kept for backwards compat with get_recent_context() etc.
+            # NOT saved to disk - LanceDB is now the source of truth
             interaction = {
                 'timestamp': self._get_timestamp(),
                 'user': user_message,
@@ -157,14 +381,9 @@ class ContextManager:
             }
             self.conversation_history.append(interaction)
             
-            # Limit history size (keep last 100 interactions)
-            if len(self.conversation_history) > 100:
-                self.conversation_history = self.conversation_history[-100:]
-                logger.info("Trimmed conversation history to last 100 interactions")
-            
-            # Periodically save to disk (every 5 interactions)
-            if len(self.conversation_history) % 5 == 0:
-                self._save_memory()
+            # Keep in-memory cache small (last 20 only)
+            if len(self.conversation_history) > 20:
+                self.conversation_history = self.conversation_history[-20:]
     
     def _should_skip_interaction(self, user_message: str, nexa_response: str) -> bool:
         """
@@ -222,25 +441,53 @@ class ContextManager:
     
     def get_recent_context(self, max_interactions: int = 10, summarize_old: bool = True) -> List[Dict[str, Any]]:
         """
-        Get recent conversation history, with optional summarization of older conversations.
+        Get recent conversation history from LanceDB (primary) or in-memory (fallback).
         
         Args:
             max_interactions: Maximum number of interactions to return
-            summarize_old: If True and history > max, prepend a summary of older conversations
+            summarize_old: If True and history > max, prepend a summary
             
         Returns:
-            List of recent interactions (may include summary as first item)
+            List of recent interactions
         """
         with self._lock:
+            # === TRY LANCEDB FIRST (PRIMARY) - but don't block too long ===
+            if self.smart_memory:
+                try:
+                    import concurrent.futures
+                    
+                    def fetch_from_lancedb():
+                        return self.smart_memory.recall_recent(limit=max_interactions)
+                    
+                    # Use ThreadPoolExecutor with timeout to prevent blocking
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(fetch_from_lancedb)
+                        try:
+                            recent = future.result(timeout=2.0)  # 2 second timeout
+                            if recent:
+                                # Convert to legacy format for compatibility
+                                formatted = []
+                                for mem in recent:
+                                    formatted.append({
+                                        'timestamp': mem.get('timestamp', ''),
+                                        'user': mem.get('user_message', ''),
+                                        'nexa': mem.get('nexa_response', '')
+                                    })
+                                return formatted
+                        except concurrent.futures.TimeoutError:
+                            logger.warning("LanceDB recall timed out, using in-memory")
+                except Exception as e:
+                    logger.warning(f"LanceDB recall failed, using in-memory: {e}")
+            
+            # === FALLBACK: In-memory cache (fast) ===
             recent = self.conversation_history[-max_interactions:]
             
-            # If we have more history than requested, optionally add summary
             if summarize_old and len(self.conversation_history) > max_interactions:
                 older_count = len(self.conversation_history) - max_interactions
                 summary_entry = {
                     'timestamp': 'summary',
                     'user': '[CONVERSATION SUMMARY]',
-                    'nexa': f'Previous {older_count} interactions covered: system commands, app management, and general queries.'
+                    'nexa': f'Previous {older_count} interactions.'
                 }
                 return [summary_entry] + recent
             
@@ -356,6 +603,8 @@ class ContextManager:
         """
         Store the last action performed for smart follow-ups.
         
+        Syncs with Smart Memory's IntentState for unified follow-up handling.
+        
         Args:
             action: Action identifier (e.g., 'list_games', 'list_apps')
             data: Action-specific data (e.g., games list, count)
@@ -364,6 +613,22 @@ class ContextManager:
             self.last_action = action
             self.last_action_data = data or {}
             logger.info(f"📌 Stored last action: {action}")
+            
+            # Sync with IntentState for unified follow-ups
+            if self.intent_state:
+                try:
+                    target = data.get('target') or data.get('app') or data.get('name') if data else None
+                    # Check multiple possible list keys for dynamic list support
+                    items = None
+                    if data:
+                        for key in ['items', 'list', 'games', 'songs', 'apps', 'applications', 'networks', 'files', 'results']:
+                            if key in data and isinstance(data[key], (list, tuple)):
+                                items = list(data[key])
+                                break
+                    self.intent_state.set_last_action(action, target=target, result_list=items)
+                    logger.debug(f"🔗 Synced action to IntentState: {action}")
+                except Exception as e:
+                    logger.warning(f"IntentState sync failed: {e}")
     
     def get_last_action(self) -> tuple[str, Dict[str, Any]]:
         """
@@ -395,6 +660,8 @@ class ContextManager:
         Push a new action onto the action stack (stores last 5 actions).
         This enables multi-step context like "the previous one", "the first one".
         
+        Syncs with Smart Memory's IntentState for unified follow-up handling.
+        
         Args:
             action: Action identifier (e.g., 'list_games', 'open_application')
             data: Action parameters (e.g., {'platform': 'steam'})
@@ -420,6 +687,22 @@ class ContextManager:
             # ALSO update legacy single-action storage for backwards compatibility
             self.last_action = action
             self.last_action_data = {'result': result, 'data': data}
+            
+            # Sync with IntentState for unified follow-ups
+            if self.intent_state:
+                try:
+                    target = None
+                    items = None
+                    if data:
+                        target = data.get('target') or data.get('app') or data.get('name')
+                        # Check multiple possible list keys for dynamic list support
+                        for key in ['items', 'list', 'games', 'songs', 'apps', 'applications', 'networks', 'files', 'results']:
+                            if key in data and isinstance(data[key], (list, tuple)):
+                                items = list(data[key])
+                                break
+                    self.intent_state.set_last_action(action, target=target, result_list=items)
+                except Exception as e:
+                    logger.warning(f"IntentState sync in push_action failed: {e}")
     
     def get_action_history(self, count: int = 3) -> List[Dict[str, Any]]:
         """
@@ -611,14 +894,18 @@ class ContextManager:
         Returns:
             List of items (e.g., game names, app names) or empty list
         """
-        # If action_stack empty, fall back to legacy last_action_data saved by set_last_action
+        # PRIORITY 1: Check IntentState first (most reliable, doesn't get overwritten by push_action)
+        if self.intent_state and hasattr(self.intent_state, '_last_list') and self.intent_state._last_list:
+            logger.debug(f"📋 Using IntentState list: {len(self.intent_state._last_list)} items")
+            return list(self.intent_state._last_list)
+        
+        # PRIORITY 2: If action_stack empty, fall back to legacy last_action_data
         if not self.action_stack:
-            # Legacy storage may contain a 'games' list or similar in last_action_data
+            # Legacy storage may contain list under various keys
             if isinstance(self.last_action_data, dict):
-                if 'games' in self.last_action_data:
-                    return list(self.last_action_data.get('games', []))
-                if 'items' in self.last_action_data:
-                    return list(self.last_action_data.get('items', []))
+                for key in ['games', 'songs', 'apps', 'applications', 'networks', 'files', 'items', 'list', 'results']:
+                    if key in self.last_action_data and isinstance(self.last_action_data[key], (list, tuple)):
+                        return list(self.last_action_data[key])
             return []
 
         # Check recent actions for list results
@@ -672,12 +959,27 @@ class ContextManager:
         """
         Resolve ordinal references like "the first one", "second", "last" to actual item.
         
+        Delegates to Smart Memory's IntentState when available for unified follow-up handling.
+        
         Args:
             reference: Text containing ordinal reference (e.g., "launch the first one")
             
         Returns:
             Resolved item name or empty string if can't resolve
         """
+        # First try IntentState (Smart Memory - unified follow-up)
+        if self.intent_state:
+            ref_lower = reference.lower()
+            ordinals = ['first', '1st', 'second', '2nd', 'third', '3rd', 'fourth', '4th', 
+                        'fifth', '5th', 'last', 'previous']
+            for ordinal in ordinals:
+                if ordinal in ref_lower:
+                    result = self.intent_state.resolve_ordinal(ordinal)
+                    if result:
+                        logger.info(f"✅ IntentState resolved ordinal '{ordinal}' → '{result}'")
+                        return result
+        
+        # Fallback to legacy logic
         last_list = self.get_last_list()
         if not last_list:
             logger.debug("⚠️ Cannot resolve ordinal: no list in context")
@@ -962,3 +1264,219 @@ class ContextManager:
             return f"Earlier: {action_summary}"
         else:
             return f"Earlier: {len(interactions)} general queries"
+    
+    # =========================================================================
+    # SMART MEMORY API (Phase 19)
+    # =========================================================================
+    
+    def get_smart_context(self, query: str, max_tokens: int = 800) -> str:
+        """
+        Get RAG-style context from Smart Memory for AI prompts.
+        
+        Args:
+            query: Current user query
+            max_tokens: Maximum tokens for context
+            
+        Returns:
+            Formatted context string or empty if not available
+        """
+        if not self.context_constructor:
+            return ""
+        
+        try:
+            return self.context_constructor.build_context(query, max_tokens)
+        except Exception as e:
+            logger.error(f"Error getting smart context: {e}")
+            return ""
+    
+    def resolve_smart_reference(self, query: str, preferred_type: str = None) -> Optional[str]:
+        """
+        Resolve vague references using Smart Memory + action_stack.
+        
+        Args:
+            query: User query with reference ("it", "that", etc.)
+            preferred_type: Preferred entity type (app, game, file, etc.)
+            
+        Returns:
+            Resolved reference or None
+        """
+        if not self.context_constructor:
+            return self.get_last_target(preferred_type)  # Fallback to legacy
+        
+        try:
+            return self.context_constructor.resolve_reference(
+                query, 
+                self.action_stack, 
+                preferred_type
+            )
+        except Exception as e:
+            logger.error(f"Error resolving reference: {e}")
+            return self.get_last_target(preferred_type)
+    
+    def recall_knowledge_answer(self, query: str, limit: int = 3) -> Dict[str, Any]:
+        """
+        Recall knowledge to answer a specific question.
+        
+        Prioritizes knowledge facts over conversations and returns
+        structured data for natural response formatting.
+        
+        Args:
+            query: The user's question (e.g., "favorite color", "birthday")
+            limit: Maximum facts to return
+            
+        Returns:
+            Dict with 'found', 'facts', 'best_match', 'similarity'
+        """
+        if not self.smart_memory:
+            return {'found': False, 'facts': [], 'best_match': None, 'similarity': 0.0}
+        
+        try:
+            return self.smart_memory.recall_knowledge_answer(query, limit)
+        except Exception as e:
+            logger.error(f"Error recalling knowledge: {e}")
+            return {'found': False, 'facts': [], 'best_match': None, 'similarity': 0.0}
+    
+    def recall_similar_memories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Find memories similar to a query (semantic search).
+        
+        Args:
+            query: Search query
+            limit: Maximum results
+            
+        Returns:
+            List of matching memories
+        """
+        if not self.smart_memory:
+            return []
+        
+        try:
+            return self.smart_memory.recall_similar(query, limit)
+        except Exception as e:
+            logger.error(f"Error recalling memories: {e}")
+            return []
+    
+    def learn_user_fact(self, fact: str, source: str = 'learned') -> Optional[str]:
+        """
+        Store a knowledge fact about the user.
+        
+        Args:
+            fact: The fact to learn (e.g., "User prefers dark theme")
+            source: 'user_stated' or 'learned'
+            
+        Returns:
+            Memory ID or None
+        """
+        if not self.smart_memory:
+            return None
+        
+        try:
+            return self.smart_memory.learn_fact(fact, source)
+        except Exception as e:
+            logger.error(f"Error learning fact: {e}")
+            return None
+    
+    def forget_memories(self, query: str, limit: int = 10) -> int:
+        """
+        Forget memories matching a query.
+        
+        Args:
+            query: Query to match memories
+            limit: Maximum to delete
+            
+        Returns:
+            Number of memories forgotten
+        """
+        if not self.smart_memory:
+            return 0
+        
+        try:
+            return self.smart_memory.forget_matching(query, limit)
+        except Exception as e:
+            logger.error(f"Error forgetting memories: {e}")
+            return 0
+    
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get Smart Memory statistics."""
+        if not self.smart_memory:
+            return {'status': 'not_available'}
+        
+        try:
+            stats = self.smart_memory.get_stats()
+            stats['status'] = 'available'
+            stats['current_session'] = self.smart_memory.get_current_session()
+            return stats
+        except Exception as e:
+            return {'status': 'error', 'error': str(e)}
+    
+    def get_current_session(self) -> Optional[str]:
+        """Get the current session ID."""
+        if self.smart_memory:
+            return self.smart_memory.get_current_session()
+        return None
+    
+    def get_session_history(self, session_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all conversation history from a session.
+        
+        Args:
+            session_id: Session ID (uses current if not provided)
+            
+        Returns:
+            List of conversation memories from that session
+        """
+        if not self.smart_memory:
+            return []
+        
+        return self.smart_memory.get_session_memories(session_id)
+    
+    # =========================================================================
+    # INTENT STATE API (Phase 19)
+    # =========================================================================
+    
+    def set_pending_intent(self, intent: str, data_needed: str, collected_data: Dict = None) -> None:
+        """
+        Set a pending intent awaiting follow-up.
+        
+        Args:
+            intent: Intent identifier (e.g., "play_music")
+            data_needed: What data is missing (e.g., "song_name")
+            collected_data: Any data already collected
+        """
+        if not self.intent_state:
+            # Fallback to legacy pending_action
+            self.set_pending_action(intent, {'data_needed': data_needed, **(collected_data or {})})
+            return
+        
+        self.intent_state.set_pending_intent(intent, data_needed, collected_data)
+    
+    def process_follow_up(self, user_input: str) -> Dict[str, Any]:
+        """
+        Process user input in context of pending intent.
+        
+        Returns:
+            Dict with action, intent, data, and message
+        """
+        if not self.intent_state:
+            return {'action': 'no_pending', 'message': 'Intent state not available'}
+        
+        return self.intent_state.process_input(user_input)
+    
+    def has_pending_follow_up(self) -> bool:
+        """Check if there's a pending follow-up intent."""
+        if self.intent_state:
+            return self.intent_state.has_pending_intent()
+        return self.has_pending_action()
+    
+    def get_follow_up_prompt(self) -> Optional[str]:
+        """Get the prompt for the pending follow-up."""
+        if self.intent_state:
+            return self.intent_state.get_follow_up_prompt()
+        return None
+    
+    def clear_follow_up(self) -> None:
+        """Clear any pending follow-up intent."""
+        if self.intent_state:
+            self.intent_state.clear()
+        self.clear_pending_action()
+

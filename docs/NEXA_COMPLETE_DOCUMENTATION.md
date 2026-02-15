@@ -1,9 +1,11 @@
 # 🤖 Nexa AI - Complete Documentation
 
-**Version:** 1.0  
-**Last Updated:** November 23, 2025  
-**Project Completion:** 55.56% (15/27 Phases)  
-**Status:** Production Ready with Active Development
+**Version:** 2.0  
+**Last Updated:** February 15, 2026  
+**Project Completion:** 64.52% (20/31 Phases)  
+**Status:** Production Ready with Active Development  
+**Latest:** 🎨 Phase 17 (Particle Orb) ✅ | 🧠 Phase 20 (Smart Memory) ✅ | 🔐 Login System ✅  
+**Next Priority:** 💜 Companion Mode Phase 30 - Emotional Intelligence
 
 ---
 
@@ -23,9 +25,11 @@
 12. [Weather Service](#weather-service)
 13. [GPU Monitoring](#gpu-monitoring)
 14. [Window Management](#window-management)
-15. [Troubleshooting](#troubleshooting)
-16. [API Reference](#api-reference)
-17. [Performance Metrics](#performance-metrics)
+15. [Smart Memory](#smart-memory)
+16. [Companion Mode (Coming Soon)](#companion-mode)
+17. [Troubleshooting](#troubleshooting)
+18. [API Reference](#api-reference)
+19. [Performance Metrics](#performance-metrics)
 
 ---
 
@@ -157,7 +161,7 @@ WHISPER_COMPUTE_TYPE=float16
 
 ## ✨ Features Overview
 
-### Current Features (55.56% Complete)
+### Current Features (64.52% Complete)
 
 | Category | Features | Status |
 |----------|----------|--------|
@@ -177,8 +181,13 @@ WHISPER_COMPUTE_TYPE=float16
 | **Notifications** | Read Action Center notifications | ✅ Complete |
 | **Clipboard** | Copy/paste/cut, Select all, Delete selection | ✅ Complete |
 | **Theme Control** | Dark/light themes, Manual toggle | ✅ Complete |
+| **System Control** | Bluetooth, Display, Power plans, Night light (Phase 16) | ✅ Complete |
+| **Modern Orb UI** | HTML5 Canvas particle orb, state transitions (Phase 17) | ✅ Complete |
+| **Smart Memory** | LanceDB vectors, semantic search, memory panel (Phase 20) | ✅ Complete |
+| **Login & Security** | User registration, password auth, lock screen | ✅ Complete |
+| **Companion Mode** | Thinking feedback, proactive engagement (Phases 28-29) | ✅ Complete |
 
-### Total Function Count: **86 Registered Functions**
+### Total Function Count: **143 Registered Functions**
 
 ---
 
@@ -1249,27 +1258,138 @@ Content Mode provides:
 
 ### Version History
 
-- **v1.0** (Current) - 55.56% feature complete, production ready
+- **v2.0** (Current) - 64.52% feature complete, production ready
+- Phase 17: Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)
+- Phase 20: Smart Memory & Learning (LanceDB + sentence-transformers)
+- Phases 28-29: Companion Mode (Thinking Feedback, Proactive Engagement)
+- Bonus: Login System, Lock Screen, Breathing Glow, Sir/Boss Addressing
+- **v1.0** - Initial release with core functionality
 - Focus: Core functionality, stability, performance
-- Next: Advanced features (YouTube, Email, Smart Home)
 
 ---
 
 ## 🎯 Project Status
 
-**Current Completion:** 55.56% (15/27 Phases)
+**Current Completion:** 64.52% (20/31 Phases)
 
-**Completed Phases:** 15
-**In Progress:** Phase 16 (Content Mode Enhancements)
-**Remaining:** 12 phases
+**Completed Phases:** 20 (including Pet P1-P7, Companion 28-29)
+**In Progress:** Phase 30 - Emotional Intelligence
+**Paused:** Phase 15 (Sharing), Pet P8
+**Remaining:** 8 planned phases
 
 **Production Status:** ✅ **Ready for Daily Use**
 
-All critical features implemented and tested. Advanced features under active development.
+All critical features implemented and tested. 143 registered functions. Companion Mode actively in progress.
 
 ---
 
-**Documentation Version:** 1.0  
-**Last Updated:** November 23, 2025  
+## 🔐 Login & Lock Screen System
+
+### Overview
+NEXA includes a secure local authentication system with PBKDF2-HMAC-SHA256 password hashing.
+
+### First Launch
+1. On first launch, the **Create Account** screen appears automatically
+2. Enter a username (minimum 2 characters)
+3. Enter a password (minimum 4 characters) and confirm it
+4. Click **Create Account** — you're automatically logged in
+
+### Subsequent Launches
+1. The **Login** screen appears with your username
+2. Enter your password and click **Login**
+
+### Lock Screen
+- Click the 🔒 button in the window title bar to lock NEXA
+- Or say **"Lock Nexa"** / **"Lock screen"** / **"Lock yourself"**
+- Enter your password to unlock
+- Lock screen features a breathing glow animation
+
+### Security Details
+- **Hashing:** PBKDF2-HMAC-SHA256 with 100,000 iterations
+- **Salt:** 32-byte random salt per user
+- **Storage:** `data/users.json` (dev) or `%LOCALAPPDATA%/Nexa AI/data/users.json` (compiled)
+- **No plaintext passwords** are ever stored
+
+---
+
+## 🎨 Modern Particle Orb (Phase 17)
+
+### Overview
+The voice orb has been completely redesigned using HTML5 Canvas with a custom vanilla JavaScript particle engine, embedded in Qt via QWebEngineView.
+
+### Visual
+- 140 particles with connection lines
+- Smooth lerp-based state transitions
+- Audio-reactive animations during TTS playback
+- Purple/cyan/pink color scheme
+
+### States
+| State | Visual |
+|-------|--------|
+| **Idle** | Gentle particle drift, slow connections |
+| **Listening** | Particles pull inward, cyan glow |
+| **Thinking** | Fast swirl, golden tones |
+| **Speaking** | Audio-reactive expansion, pink accents |
+| **Error** | Red scatter, shaking |
+
+### Breathing Glow Title
+The "NEXA" title features a breathing glow effect (QGraphicsDropShadowEffect with sine-wave modulation) that follows the orb's state color.
+
+---
+
+## 🧠 Smart Memory System (Phase 20)
+
+### Overview
+LanceDB vector database with sentence-transformers (all-MiniLM-L6-v2) for semantic memory storage and retrieval.
+
+### Voice Commands
+```
+"Remember that I like dark theme"     → Stores as knowledge memory
+"Forget about my password"            → Deletes matching memories
+"What do you know about me?"          → Recalls relevant memories
+"Show my memories"                    → Opens Memory Panel GUI
+```
+
+### Memory Types
+- **ConversationMemory** — Full interaction history with embeddings
+- **KnowledgeMemory** — Facts about the user (preferences, stated info)
+- **SkillMemory** — Action patterns and usage frequencies
+
+---
+
+## 💜 Companion Mode
+
+Nexa is evolving from a reactive assistant to a **proactive AI companion**.
+
+### Phase 28: Thinking State Feedback ✅ COMPLETED
+- ✅ Immediate acknowledgment: "On it!", "Got it!", "Let me check!"
+- ✅ Task-type classification (general/search/system/complex/creative)
+- ✅ Progress updates for long operations
+- ✅ Slower speech speed (0.95x) for longer responses
+- ✅ Past tense responses for completed actions
+
+### Phase 29: Proactive Engagement ✅ COMPLETED
+- ✅ Idle detection and smart suggestions
+- ✅ Break reminders after long work sessions
+- ✅ Time-based greetings (morning/evening)
+- ✅ Activity pattern learning from Smart Memory
+
+### Phase 30: Emotional Intelligence 🚧 IN PROGRESS
+- Mood detection from voice tone
+- Emotional memory ("How did your exam go?")
+- Goal and dream tracking
+- Milestone celebrations
+
+### Phase 31: Personality & Fun 📋 PLANNED
+- NEXA opinions and preferences
+- Mini-games (trivia, 20 questions)
+- Compliments and encouragement
+- Nickname system
+
+---
+
+**Documentation Version:** 2.0  
+**Last Updated:** February 15, 2026  
+**Maintained By:** Ali Adil Waseem
 **Maintained By:** Ali Adil Waseem  
 **Project:** Nexa AI Desktop Assistant

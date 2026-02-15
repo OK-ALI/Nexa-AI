@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.1-blue)
+![Version](https://img.shields.io/badge/version-2.0-blue)
 ![Status](https://img.shields.io/badge/status-production%20ready-green)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -17,17 +17,22 @@
 
 ## 🌟 What is Nexa?
 
-Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give you complete control over your Windows computer using natural voice commands.
+Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give you complete control over your Windows computer using natural voice commands. She's not just an assistant – she's designed to be your **friendly AI companion**.
 
 ### Key Highlights
 
 - 🎙️ **Voice-First Interface** - Natural conversations, no wake words
 - 🌐 **Single Model Architecture** - Llama 3.1 8B (Online & Offline)
 - 🔒 **Privacy-First** - Fully functional offline mode
-- ⚡ **Fast & Responsive** - 5-15 second responses
-- 🎯 **50+ Commands** - Full system control
+- ⚡ **Fast & Responsive** - 2-5 second responses
+- 🎯 **143+ Commands** - Full system control
 - 🎤 **Speaker Verification** - Voice recognition (SpeechBrain)
-- 🎨 **Beautiful UI** - Animated voice orb with 60-bar waveform
+- 🎨 **Beautiful UI** - Modern particle orb with HTML5 Canvas
+- 🐾 **Desktop Pet Companion** - Cute animated AI character
+- 🧠 **Smart Memory** - Remembers facts, preferences, conversations (LanceDB)
+- 🔐 **Login & Lock Screen** - Secure PBKDF2 authentication
+- 💫 **Breathing Glow Title** - Dynamic title glow following orb state
+- 💜 **Companion Mode** - Thinking feedback, proactive engagement
 
 ---
 
@@ -54,6 +59,32 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 👁️ Screen reading (online mode)
 - 🖼️ Screen description (online mode)
 - 🎤 Speaker verification (optional)
+
+### Desktop Pet UI (NEW!)
+
+- 🐾 Animated character companion
+- 🎭 8 expressive states (idle, listening, thinking, speaking, sleeping, error, happy, content)
+- 🌊 Smooth floating & breathing animations (60 FPS)
+- 📏 3 size options (Small/Medium/Large)
+- 🖱️ Draggable, always-on-top window
+- 🎨 Custom Nexa character design
+- 🔄 Toggle between orb UI and pet UI
+
+### 🧠 Smart Memory
+
+- 💾 Remembers facts and preferences ("Remember I like dark theme")
+- 🔍 Semantic search (finds by meaning, not just keywords)
+- 💬 Conversation history for context
+- 🎯 Skill learning from successful actions
+- 📈 Memory panel GUI for browsing memories
+- 🗑️ Forget command ("Forget about my password")
+
+### 💜 Companion Mode (Coming Soon)
+
+- 💭 **Thinking Feedback** - "Working on it...", "Let me check..." 
+- 👋 **Proactive Engagement** - Idle suggestions, break reminders
+- 🤗 **Emotional Intelligence** - Mood detection, check-ins
+- 🎮 **Personality & Fun** - Jokes, opinions, mini-games
 
 ---
 
@@ -123,6 +154,12 @@ This single comprehensive document contains **EVERYTHING:**
 
 **👉 START HERE:** [NEXA_COMPLETE_DOCUMENTATION.md](NEXA_COMPLETE_DOCUMENTATION.md)
 
+### **🐾 Pet UI Documentation**
+
+- **[NEXA_PET_PROGRESS.md](NEXA_PET_PROGRESS.md)** - Pet implementation progress (P1-P3 complete)
+- **[LIVE2D_PET_GUIDE.md](LIVE2D_PET_GUIDE.md)** - Technical pet guide (Sprite + Live2D)
+- **[NEXA_PHASES_ROADMAP.md](NEXA_PHASES_ROADMAP.md)** - Full project roadmap with pet phases
+
 ---
 
 ## 🎯 Quick Examples
@@ -157,16 +194,17 @@ This single comprehensive document contains **EVERYTHING:**
 ### AI Models
 
 - **Model:** Llama 3.1 8B (Local via Ollama)
-- **Speech:** Faster-Whisper Large-v3-turbo
-- **TTS:** Piper (Amy voice)
+- **Speech:** Faster-Whisper base.en (GPU accelerated)
+- **TTS:** Kokoro TTS (af_heart voice, subprocess isolation)
 - **Speaker Verification:** SpeechBrain ECAPA-TDNN
 
 ### Core
 
 - **Language:** Python 3.11+
-- **UI:** PyQt6
+- **UI:** PySide6 (Qt6) + QWebEngineView
 - **GPU:** CUDA (NVIDIA)
 - **Server:** Ollama (local AI)
+- **Memory:** LanceDB + sentence-transformers
 
 ---
 
@@ -199,27 +237,36 @@ This single comprehensive document contains **EVERYTHING:**
 
 ## 🗺️ Roadmap
 
-### Completed (60%)
+### Completed (64%)
 
 - ✅ Core AI System (Hybrid online/offline)
-- ✅ Voice Interface (Speech + TTS)
-- ✅ 50+ System Functions
-- ✅ Beautiful UI
+- ✅ Voice Interface (Speech + Kokoro TTS)
+- ✅ 143+ System Functions
+- ✅ Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)
+- ✅ Desktop Pet UI (P1-P7: Foundation through Personality)
 - ✅ Speaker Verification
+- ✅ Smart Memory & Learning (LanceDB + embeddings)
+- ✅ Login System & Lock Screen (PBKDF2 auth)
+- ✅ Breathing Glow Title + Sir/Boss Addressing
+- ✅ Companion Mode: Thinking Feedback + Proactive Engagement
+- ✅ System Control Expansion (Phase 16: 26 functions)
 - ✅ Performance Optimizations
 
 ### In Progress
 
-- ⏳ Advanced Personalization
-- ⏳ Enhanced Automation
-- ⏳ Offline Vision (OCR)
+- ⏳ **Companion Mode Phase 30** - Emotional Intelligence (mood detection, check-ins)
+
+### Paused
+
+- ⏸️ Phase 15 - Multi-platform Sharing (core working, automation deferred)
+- ⏸️ Pet Phase P8 - Integration & Polish (waiting for more features)
 
 ### Planned
 
-- 📋 Multi-device support
-- 📋 Mobile companion app
-- 📋 Plugin system
-- 📋 Multi-language support
+- 📋 Phase 18: YouTube Integration
+- 📋 Phase 19: Email Integration
+- 📋 Phase 21-26: File Management, Vision, Productivity
+- 📋 Phase 31: Companion Personality & Fun
 
 ---
 
@@ -285,10 +332,11 @@ This single comprehensive document contains **EVERYTHING:**
 2. **Privacy-First** - 100% offline capable
 3. **Natural Conversations** - No rigid commands
 4. **Context Aware** - Remembers conversation
-5. **Beautiful Interface** - Animated voice orb
+5. **Beautiful Interface** - Animated voice orb + Desktop pet companion
 6. **GPU Accelerated** - Fast processing
 7. **Speaker Verification** - Voice recognition
-8. **Open Source** - Full control
+8. **Desktop Pet UI** - Cute animated character that reacts to your voice
+9. **Open Source** - Full control
 
 ---
 
@@ -314,10 +362,11 @@ This single comprehensive document contains **EVERYTHING:**
 
 - Llama 3.1 8B by Meta (Local AI)
 - Faster-Whisper by Systran (Speech Recognition)
-- Piper TTS by Rhasspy (Text-to-Speech)
+- Kokoro TTS (Text-to-Speech)
 - SpeechBrain (Speaker Verification)
 - Silero VAD (Voice Detection)
-- PyQt6 (User Interface)
+- PySide6 (User Interface)
+- LanceDB (Vector Memory)
 - Ollama (Local AI Serving)
 
 ---

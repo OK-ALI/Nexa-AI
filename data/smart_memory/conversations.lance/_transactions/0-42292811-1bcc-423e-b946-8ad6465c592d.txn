@@ -1,0 +1,5 @@
+$42292811-1bcc-423e-b946-8ad6465c592d²¨id ÿÿÿÿÿÿÿÿÿ*string08'user_message ÿÿÿÿÿÿÿÿÿ*string08(nexa_response ÿÿÿÿÿÿÿÿÿ*string084vector ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:38408$	timestamp ÿÿÿÿÿÿÿÿÿ*string08 success ÿÿÿÿÿÿÿÿÿ*bool08$
+importance ÿÿÿÿÿÿÿÿÿ*float08tags ÿÿÿÿÿÿÿÿÿ*string08%
+session_id ÿÿÿÿÿÿÿÿÿ*string08"'
+lance.auto_cleanup.older_than14days"!
+lance.auto_cleanup.interval20

@@ -39,6 +39,8 @@ from utils.error_handler import handle_error, ErrorCategory, ErrorSeverity
 # Import UI components
 from PySide6.QtWidgets import QApplication
 from ui.nexa_modern_window import NexaModernWindow
+from core.auth_manager import AuthManager
+from ui.login_dialog import LoginDialog
 
 # Global references
 hud_window = None
@@ -172,6 +174,18 @@ def main():
                 logger.warning("⚠️ Setup cancelled by user. Exiting.")
                 sys.exit(0)
         
+        # --- Authentication ---
+        auth_data_dir = user_data_dir / "data"
+        auth_data_dir.mkdir(parents=True, exist_ok=True)
+        auth_manager = AuthManager(auth_data_dir)
+        
+        login_dialog = LoginDialog(auth_manager)
+        if login_dialog.exec() != LoginDialog.DialogCode.Accepted:
+            logger.warning("⚠️ Login cancelled by user. Exiting.")
+            sys.exit(0)
+        
+        logger.info(f"🔐 Authenticated as: {auth_manager.current_user}")
+        
         # Initialize core components AFTER wizard (so API keys are loaded)
         config_instance, brain_instance, success = initialize_application()
         
@@ -182,6 +196,10 @@ def main():
         # Create Modern window (new clean design matching reference image)
         log_section(logger, "LAUNCHING NEXA UI", logging.INFO)
         hud_window = NexaModernWindow(brain_instance, config_instance)
+        
+        # Attach lock screen to window
+        hud_window.setup_lock_screen(auth_manager)
+        
         hud_window.show()
         logger.info("✅ Modern UI launched")
         

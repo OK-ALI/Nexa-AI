@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXA Content Editor</title>
+    <style>
+        /* ── Reset ── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: transparent;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Toolbar ── */
+        #toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 3px;
+            padding: 6px 10px;
+            background: rgba(15, 25, 45, 0.85);
+            border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+            -webkit-user-select: none;
+            user-select: none;
+            min-height: 42px;
+        }
+
+        .tool-btn {
+            width: 30px;
+            height: 30px;
+            background: rgba(50, 70, 100, 0.5);
+            border: 1px solid transparent;
+            border-radius: 5px;
+            color: #c8d8e8;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .tool-btn:hover {
+            background: rgba(70, 100, 140, 0.7);
+            color: #fff;
+        }
+        .tool-btn.active {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: rgba(0, 212, 255, 0.5);
+            color: #00d4ff;
+        }
+
+        .tool-select {
+            height: 30px;
+            background: rgba(50, 70, 100, 0.5);
+            border: 1px solid transparent;
+            border-radius: 5px;
+            color: #c8d8e8;
+            padding: 0 6px;
+            font-size: 11px;
+            cursor: pointer;
+            outline: none;
+        }
+        .tool-select:hover {
+            background: rgba(70, 100, 140, 0.7);
+        }
+        .tool-select option {
+            background: #1a2540;
+            color: #e0e8f0;
+        }
+
+        .tool-sep {
+            width: 1px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 3px;
+            flex-shrink: 0;
+        }
+
+        /* ── Editor ── */
+        #editor {
+            flex: 1;
+            padding: 20px 24px;
+            color: #ffffff;
+            background: rgba(5, 35, 45, 0.95);
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 12pt;
+            line-height: 1.7;
+            overflow-y: auto;
+            outline: none;
+            min-height: 100px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        #editor.empty::before {
+            content: "Start typing or paste your content here...\A\A\1F3A4  Voice Commands:\A\A    \2022  Refine: 'Make it formal' | 'Make it shorter' | 'Fix grammar'\A               'Improve this' | 'Summarize' | 'Make it casual'\A\A    \2022  Format: 'Make it bold' | 'Align center' | 'Bullet list'\A               'Bigger font' | 'Underline this'\A\A    \2022  Create PDF: 'Create PDF' | 'Create formatted PDF'\A\A    \2022  Exit: 'Exit content mode' | 'Close editor'";
+            white-space: pre-wrap;
+            color: rgba(0, 200, 220, 0.35);
+            pointer-events: none;
+            font-size: 11pt;
+        }
+
+        #editor::selection {
+            background: rgba(0, 212, 255, 0.35);
+            color: #ffffff;
+        }
+
+        #editor ul, #editor ol {
+            margin-left: 20px;
+            padding-left: 10px;
+        }
+
+        /* ── Scrollbar ── */
+        #editor::-webkit-scrollbar { width: 8px; }
+        #editor::-webkit-scrollbar-track { background: rgba(20, 30, 60, 0.4); }
+        #editor::-webkit-scrollbar-thumb {
+            background: linear-gradient(to bottom, #00d4ff, #9333ea);
+            border-radius: 4px;
+        }
+        #editor::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(to bottom, #33e0ff, #a855f7);
+        }
+
+        /* ── Hidden color picker ── */
+        #colorPicker {
+            position: absolute;
+            visibility: hidden;
+            width: 0;
+            height: 0;
+        }
+
+        /* ── Color indicator on button ── */
+        .color-indicator {
+            display: block;
+            height: 3px;
+            width: 16px;
+            border-radius: 1px;
+            margin-top: 1px;
+        }
+
+        /* ── Element-specific sizes ── */
+        #selFont { width: 125px; }
+        #selSize { width: 52px; }
+        #btnUnderline { text-decoration: underline; }
+        #colorInd { background: #ffffff; }
+
+        /* ════════════════════════════════════════════
+           LIGHT THEME
+           ════════════════════════════════════════════ */
+        body.light #toolbar {
+            background: rgba(235, 240, 248, 0.95);
+            border-color: rgba(0, 90, 153, 0.15);
+        }
+        body.light .tool-btn {
+            background: rgba(200, 210, 225, 0.7);
+            color: #3a4560;
+        }
+        body.light .tool-btn:hover {
+            background: rgba(170, 185, 205, 0.9);
+            color: #1a2240;
+        }
+        body.light .tool-btn.active {
+            background: rgba(0, 130, 210, 0.15);
+            border-color: rgba(0, 130, 210, 0.4);
+            color: #0078c8;
+        }
+        body.light .tool-select {
+            background: rgba(200, 210, 225, 0.7);
+            color: #3a4560;
+        }
+        body.light .tool-select option {
+            background: #f0f2f5;
+            color: #1a1a1a;
+        }
+        body.light .tool-sep {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        body.light #editor {
+            background: rgba(255, 255, 255, 0.98);
+            color: #1a1a2e;
+        }
+        body.light #editor.empty::before {
+            color: rgba(100, 110, 140, 0.45);
+        }
+        body.light #editor::selection {
+            background: rgba(0, 90, 153, 0.25);
+            color: #1a1a1a;
+        }
+        body.light #editor::-webkit-scrollbar-track { background: rgba(220, 225, 235, 0.6); }
+        body.light #editor::-webkit-scrollbar-thumb {
+            background: linear-gradient(to bottom, #0078c8, #6366f1);
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════ TOOLBAR ═══════════ -->
+<div id="toolbar">
+    <!-- Font family -->
+    <select class="tool-select" id="selFont" onchange="execSetFont(this.value)" title="Font Family">
+        <option value="Segoe UI">Segoe UI</option>
+        <option value="Arial">Arial</option>
+        <option value="Times New Roman">Times New Roman</option>
+        <option value="Courier New">Courier New</option>
+        <option value="Georgia">Georgia</option>
+        <option value="Verdana">Verdana</option>
+        <option value="Comic Sans MS">Comic Sans MS</option>
+        <option value="Trebuchet MS">Trebuchet MS</option>
+    </select>
+
+    <!-- Font size -->
+    <select class="tool-select" id="selSize" onchange="execSetFontSizePt(parseInt(this.value))" title="Font Size">
+        <option value="8">8</option>
+        <option value="10">10</option>
+        <option value="12" selected>12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18">18</option>
+        <option value="20">20</option>
+        <option value="22">22</option>
+        <option value="24">24</option>
+    </select>
+
+    <div class="tool-sep"></div>
+
+    <!-- Bold / Italic / Underline -->
+    <button class="tool-btn" id="btnBold" onclick="execToggleBold()" title="Bold (Ctrl+B)"><b>B</b></button>
+    <button class="tool-btn" id="btnItalic" onclick="execToggleItalic()" title="Italic (Ctrl+I)"><i>I</i></button>
+    <button class="tool-btn" id="btnUnderline" onclick="execToggleUnderline()" title="Underline (Ctrl+U)">U</button>
+
+    <div class="tool-sep"></div>
+
+    <!-- Alignment -->
+    <button class="tool-btn" id="btnAlignL" onclick="execSetAlign('left')" title="Align Left">&#9776;</button>
+    <button class="tool-btn" id="btnAlignC" onclick="execSetAlign('center')" title="Center">&#9783;</button>
+    <button class="tool-btn" id="btnAlignR" onclick="execSetAlign('right')" title="Align Right">&#11132;</button>
+    <button class="tool-btn" id="btnAlignJ" onclick="execSetAlign('justify')" title="Justify">&#8803;</button>
+
+    <div class="tool-sep"></div>
+
+    <!-- Lists -->
+    <button class="tool-btn" id="btnBullet" onclick="execBulletList()" title="Bullet List">&bull;</button>
+    <button class="tool-btn" id="btnNumber" onclick="execNumberedList()" title="Numbered List">1.</button>
+
+    <div class="tool-sep"></div>
+
+    <!-- Indent -->
+    <button class="tool-btn" onclick="execIndent()" title="Increase Indent">&rarr;</button>
+    <button class="tool-btn" onclick="execOutdent()" title="Decrease Indent">&larr;</button>
+
+    <div class="tool-sep"></div>
+
+    <!-- Color -->
+    <button class="tool-btn" onclick="openColorPicker()" title="Text Color">
+        A<span class="color-indicator" id="colorInd"></span>
+    </button>
+
+    <div class="tool-sep"></div>
+
+    <!-- Undo / Redo -->
+    <button class="tool-btn" onclick="execUndo()" title="Undo (Ctrl+Z)">&#8630;</button>
+    <button class="tool-btn" onclick="execRedo()" title="Redo (Ctrl+Y)">&#8631;</button>
+</div>
+
+<!-- ═══════════ EDITOR ═══════════ -->
+<div id="editor" contenteditable="true" class="empty"
+     spellcheck="true"></div>
+
+<!-- Hidden color input -->
+<input type="color" id="colorPicker" value="#ffffff">
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   NEXA Content Editor — Pure JS (no external dependencies)
+   Communication to Python via console.log('NEXA:...')
+   ═══════════════════════════════════════════════════════════ */
+
+var editor = document.getElementById('editor');
+var _debounce = null;
+var _currentSize = 12;
+
+// ── Placeholder handling ──
+function checkPlaceholder() {
+    var text = editor.innerText.trim();
+    if (!text || text === '\n') {
+        editor.classList.add('empty');
+    } else {
+        editor.classList.remove('empty');
+    }
+}
+
+// ── Editor events ──
+editor.addEventListener('input', function() {
+    checkPlaceholder();
+    syncToolbar();
+    // Debounced notification to Python
+    clearTimeout(_debounce);
+    _debounce = setTimeout(notifyPython, 120);
+});
+
+editor.addEventListener('mouseup', syncToolbar);
+editor.addEventListener('keyup', function(e) {
+    // Sync on cursor movement keys + formatting shortcuts
+    if (e.key.startsWith('Arrow') || e.ctrlKey || e.key === 'Home' || e.key === 'End') {
+        syncToolbar();
+    }
+});
+
+editor.addEventListener('paste', function(e) {
+    // Paste as plain text by default to avoid weird formatting
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+});
+
+// ── Color picker ──
+document.getElementById('colorPicker').addEventListener('input', function() {
+    document.execCommand('foreColor', false, this.value);
+    document.getElementById('colorInd').style.background = this.value;
+    editor.focus();
+    notifyPython();
+});
+
+// ════════════════════════════════════════
+// FORMATTING COMMANDS (called from Python)
+// ════════════════════════════════════════
+
+function execToggleBold() {
+    editor.focus();
+    document.execCommand('bold', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execToggleItalic() {
+    editor.focus();
+    document.execCommand('italic', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execToggleUnderline() {
+    editor.focus();
+    document.execCommand('underline', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execSetFont(fontName) {
+    editor.focus();
+    document.execCommand('fontName', false, fontName);
+    document.getElementById('selFont').value = fontName;
+    notifyPython();
+}
+
+function execSetFontSizePt(sizeInPt) {
+    editor.focus();
+    _currentSize = Math.max(8, Math.min(24, sizeInPt));
+
+    // execCommand fontSize uses 1-7 scale — use size 7 then override with CSS
+    document.execCommand('fontSize', false, '7');
+    var els = editor.querySelectorAll('font[size="7"]');
+    els.forEach(function(el) {
+        el.removeAttribute('size');
+        el.style.fontSize = _currentSize + 'pt';
+    });
+
+    // Update dropdown
+    var sel = document.getElementById('selSize');
+    sel.value = String(_currentSize);
+
+    notifyPython();
+}
+
+function execIncreaseFontSize() {
+    execSetFontSizePt(_currentSize + 2);
+}
+
+function execDecreaseFontSize() {
+    execSetFontSizePt(_currentSize - 2);
+}
+
+function execSetAlign(alignment) {
+    editor.focus();
+    var cmd = {
+        'left':    'justifyLeft',
+        'center':  'justifyCenter',
+        'right':   'justifyRight',
+        'justify': 'justifyFull'
+    };
+    document.execCommand(cmd[alignment] || 'justifyLeft', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execBulletList() {
+    editor.focus();
+    document.execCommand('insertUnorderedList', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execNumberedList() {
+    editor.focus();
+    document.execCommand('insertOrderedList', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execIndent() {
+    editor.focus();
+    document.execCommand('indent', false);
+    notifyPython();
+}
+
+function execOutdent() {
+    editor.focus();
+    document.execCommand('outdent', false);
+    notifyPython();
+}
+
+function execClearFormatting() {
+    editor.focus();
+    document.execCommand('removeFormat', false);
+    syncToolbar();
+    notifyPython();
+}
+
+function execUndo() {
+    editor.focus();
+    document.execCommand('undo', false);
+    checkPlaceholder();
+    syncToolbar();
+    notifyPython();
+}
+
+function execRedo() {
+    editor.focus();
+    document.execCommand('redo', false);
+    checkPlaceholder();
+    syncToolbar();
+    notifyPython();
+}
+
+function openColorPicker() {
+    document.getElementById('colorPicker').click();
+}
+
+// ════════════════════════════════════════
+// CONTENT API (called from Python)
+// ════════════════════════════════════════
+
+function getContent() {
+    return editor.innerText;
+}
+
+function getHTML() {
+    return editor.innerHTML;
+}
+
+function getWordCount() {
+    var text = editor.innerText.trim();
+    if (!text) return 0;
+    return text.split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+}
+
+function setContent(text) {
+    editor.innerText = text;
+    checkPlaceholder();
+    syncToolbar();
+    notifyPython();
+}
+
+function setHTMLContent(html) {
+    editor.innerHTML = html;
+    checkPlaceholder();
+    syncToolbar();
+    notifyPython();
+}
+
+function clearEditor() {
+    editor.innerHTML = '';
+    checkPlaceholder();
+    syncToolbar();
+    notifyPython();
+}
+
+// ════════════════════════════════════════
+// TOOLBAR STATE SYNC
+// ════════════════════════════════════════
+
+function syncToolbar() {
+    _setActive('btnBold',      document.queryCommandState('bold'));
+    _setActive('btnItalic',    document.queryCommandState('italic'));
+    _setActive('btnUnderline', document.queryCommandState('underline'));
+    _setActive('btnAlignL',    document.queryCommandState('justifyLeft'));
+    _setActive('btnAlignC',    document.queryCommandState('justifyCenter'));
+    _setActive('btnAlignR',    document.queryCommandState('justifyRight'));
+    _setActive('btnAlignJ',    document.queryCommandState('justifyFull'));
+    _setActive('btnBullet',    document.queryCommandState('insertUnorderedList'));
+    _setActive('btnNumber',    document.queryCommandState('insertOrderedList'));
+}
+
+function _setActive(id, active) {
+    var el = document.getElementById(id);
+    if (el) {
+        if (active) el.classList.add('active');
+        else        el.classList.remove('active');
+    }
+}
+
+// ════════════════════════════════════════
+// THEME SUPPORT
+// ════════════════════════════════════════
+
+function setTheme(theme) {
+    if (theme && (theme.toLowerCase() === 'light')) {
+        document.body.classList.add('light');
+    } else {
+        document.body.classList.remove('light');
+    }
+}
+
+// ════════════════════════════════════════
+// PYTHON COMMUNICATION
+// ════════════════════════════════════════
+
+function notifyPython() {
+    var words = getWordCount();
+    var chars = editor.innerText.length;
+    var status;
+    if (words === 0)        status = 'empty';
+    else if (words < 50)    status = 'not_ready';
+    else if (words <= 500)  status = 'ready';
+    else                    status = 'exceeds_limit';
+
+    console.log('NEXA:' + JSON.stringify({
+        event: 'textChanged',
+        words: words,
+        chars: chars,
+        status: status
+    }));
+}
+
+// ── Initial state ──
+checkPlaceholder();
+syncToolbar();
+</script>
+</body>
+</html>

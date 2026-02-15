@@ -1,7 +1,22 @@
 # 🔄 Nexa Development Workflow
 
 **Established:** November 8, 2025  
+**Last Updated:** January 1, 2026  
 **Status:** Active  
+
+---
+
+## 🎯 Current Priority Track
+
+| Priority | Phase | Description | Status |
+|----------|-------|-------------|--------|
+| **P0** | Smart Memory Testing | Test all memory features | 🔧 In Progress |
+| **P1** | Phase 27 | Thinking State Feedback | 📋 Next |
+| **P2** | Phase 28 | Proactive Engagement | 📋 Planned |
+| **P3** | Phase 29 | Emotional Intelligence | 📋 Planned |
+| **P4** | Phase 30 | Personality & Fun | 📋 Planned |
+
+**Note:** Companion Mode (Phases 27-30) is HIGH PRIORITY after Smart Memory testing.
 
 ---
 

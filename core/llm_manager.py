@@ -577,26 +577,125 @@ JSON Response:"""
     
     def _get_dynamic_function_catalog(self) -> str:
         """
-        Get dynamic function catalog from executor's function registry.
-        Falls back to static message if executor not available (backward compatibility).
+        Get ORGANIZED function catalog for AI prompt.
+        Includes ALL functions but grouped by category for better LLM understanding.
         
         Returns:
-            Formatted string of all available functions with descriptions
+            Formatted string of all functions organized by category
         """
-        if self.executor and hasattr(self.executor, 'function_registry'):
-            try:
-                # Get catalog from registry (detailed format with descriptions)
-                catalog = self.executor.function_registry.get_catalog(format_type="detailed")
-                function_count = len(self.executor.function_registry.list_functions())
-                logger.debug(f"📚 Dynamic function catalog loaded: {function_count} functions")
-                return catalog
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to get dynamic catalog: {e}, using fallback")
+        # FULL CATALOG: All functions organized by category
+        # Compact format: func(params) - description
+        organized_catalog = """
+=== APPLICATIONS ===
+open_application(app_name) - Open any app by name
+close_application(app_name) - Close an app
+get_installed_applications() - List installed apps
+get_running_applications() - List running apps
+
+=== WINDOWS ===
+minimize_window(app_name) - Minimize a window
+maximize_window(app_name) - Maximize a window
+restore_window(app_name) - Restore window
+close_active_window(app_name) - Close active window
+minimize_all_windows() - Minimize all
+switch_to_window(app_name) - Switch to app
+get_active_window() - Get active window name
+
+=== TIME & DATE ===
+get_current_time() - Get current time
+get_current_date() - Get current date
+
+=== SYSTEM INFO ===
+get_battery_status() - Battery level & charging
+get_battery_percentage() - Just battery %
+get_gpu_usage() - GPU memory usage
+get_system_info() - System information
+
+=== VOLUME & BRIGHTNESS ===
+set_volume(level) - Set volume 0-100
+get_current_volume() - Get current volume
+mute_volume() - Mute audio
+unmute_volume() - Unmute audio
+set_brightness(level) - Set brightness 0-100
+get_current_brightness() - Get brightness
+
+=== MUSIC ===
+play_music(song_name) - Play music (song optional)
+pause_music() - Pause music
+resume_music() - Resume playback
+stop_music() - Stop music
+next_song() - Skip to next
+previous_song() - Previous song
+
+=== GAMES ===
+list_games() - List installed games
+launch_game(game_name) - Launch a game
+
+=== WEATHER ===
+get_weather(location) - Current weather (location optional)
+get_forecast(location) - Weather forecast
+
+=== WEB & SEARCH ===
+search_web(query) - Search the web
+
+=== SCREENSHOT ===
+take_screenshot(filename) - Capture screen (filename optional)
+
+=== WIFI ===
+get_wifi_status() - Current WiFi connection status
+list_wifi_networks() - List available networks
+connect_wifi(network_name) - Connect to network
+disconnect_wifi() - Disconnect WiFi
+get_saved_wifi_profiles() - Saved WiFi profiles
+
+=== FILES & FOLDERS ===
+open_folder(folder_path) - Open folder
+
+=== CONTENT MODE (Text Editing) ===
+enter_content_mode() - Open text editor
+exit_content_mode() - Close editor
+refine_text(mode) - Refine text (modes: formal, shorter, grammar_only, improve, summarize, casual, paraphrase, expand, simplify, academic, outline, add_headings, extract_terms, flashcards, study_questions)
+create_pdf(format) - Create PDF
+mark_content_ready() - Mark content ready
+
+=== TEXT FORMATTING ===
+format_bold() - Bold text
+format_italic() - Italic text
+format_underline() - Underline
+format_align(alignment) - Align text (left/center/right)
+increase_font_size() - Bigger font
+decrease_font_size() - Smaller font
+set_font(font_name) - Change font
+set_font_size(size) - Set font size
+create_bullet_list() - Bullet list
+create_numbered_list() - Numbered list
+increase_indent() - Add indent
+decrease_indent() - Remove indent
+clear_formatting() - Clear format
+
+=== SMART MEMORY ===
+remember_this(fact) - Store a fact/preference
+forget_about(topic) - Forget memories about topic
+what_do_you_know(topic) - Recall memories
+get_memory_stats() - Memory statistics
+show_memory_panel() - Open memory GUI
+
+=== SYSTEM CONTROL ===
+lock_screen() - Lock PC
+system_shutdown() - Shutdown PC
+system_restart() - Restart PC
+system_sleep() - Sleep mode
+system_hibernate() - Hibernate PC
+show_notification(title, message) - Show notification
+
+=== TYPING ===
+type_text(text) - Type text at cursor
+
+=== EXIT ===
+exit_nexa() - Close Nexa"""
         
-        # Fallback: If executor not available, return basic message
-        logger.warning("⚠️ Executor not available - using static fallback catalog")
-        return """⚠️ Function catalog unavailable - using basic function set.
-Contact system administrator if you see this message."""
+        logger.debug(f"📚 Using organized function catalog (all functions by category)")
+        return organized_catalog
     
     def _generate_with_llama(self, prompt: str, **kwargs) -> str:
         """
@@ -679,7 +778,10 @@ Contact system administrator if you see this message."""
             
             # Llama 3.1 8B OPTIMIZED prompt - Superior reasoning, native function calling, excellent NLP
             # Llama 3.1 is specifically trained for tool use and instruction following
-            llama_prompt = f"""You are Nexa, a friendly AI assistant. Respond in JSON format ONLY.
+            llama_prompt = f"""You are Nexa, a friendly AI assistant created by Ali Adil Waseem. Respond in JSON format ONLY.
+
+ABOUT YOUR CREATOR (share when asked who made you or how you exist):
+Ali Adil Waseem is a BS Artificial Intelligence student at UMT (University of Management and Technology), with a sharp analytical mindset and strong foundation in AI technologies. His primary language is Python, with skills in NLP, Machine Learning, and Deep Learning. He writes clean, efficient code, solves complex problems logically, and is a promising AI developer with fast learning ability and consistent dedication.
 
 RESPONSE FORMAT (choose ONE):
 
@@ -701,6 +803,10 @@ RESPONSE FORMAT (choose ONE):
 9. Be warm and friendly in "response" field
 
 ✅ WEB SEARCH: Use search_web function to search the internet!
+
+⚠️ CRITICAL RULE: Commands that DO something (open, close, set, play, list) MUST use function_call!
+ONLY "hello", "how are you", jokes, or chitchat use response-only format.
+If the user wants you to DO anything → function_call is MANDATORY!
 
 EXAMPLES:
 

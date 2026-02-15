@@ -1,0 +1,22 @@
+{
+    "enabled": false,
+    "pet_type": "sprite",
+    "size": "small",
+    "position_x": 977,
+    "position_y": 0,
+    "snap_to_edges": true,
+    "snap_distance": 20,
+    "always_on_top": true,
+    "show_in_taskbar": false,
+    "scale_percent": 105,
+    "opacity": 1.0,
+    "animations_enabled": true,
+    "show_speech_bubble": true,
+    "expression_speed": 1.09,
+    "personality_enabled": true,
+    "time_aware_mode": true,
+    "idle_timeout_minutes": 5,
+    "click_reactions": true,
+    "glow_enabled": true,
+    "glow_intensity": 0.4
+}

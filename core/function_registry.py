@@ -13,17 +13,26 @@ class FunctionRegistry:
     """
     Registry of all available functions that Gemma3 can call.
     Enables dynamic function execution based on AI reasoning instead of hardcoded keywords.
+    
+    Now includes skill tracking for Smart Memory learning.
     """
     
-    def __init__(self, executor):
+    def __init__(self, executor, context_manager=None):
         """
         Initialize function registry with executor.
         
         Args:
             executor: CommandExecutor instance with all system functions
+            context_manager: ContextManager for Smart Memory skill tracking (optional)
         """
         self.executor = executor
+        self.context_manager = context_manager
         self.functions: Dict[str, Dict[str, Any]] = {}
+        
+        # Initialize SystemControl module for Phase 16+ system control functions
+        from core.system_control import SystemControl
+        self.system_control = SystemControl()
+        
         self._register_all_functions()
         logger.info(f"Function Registry initialized with {len(self.functions)} functions")
     
@@ -82,6 +91,21 @@ class FunctionRegistry:
             "get_gpu_usage",
             self.executor.get_gpu_usage,
             "Get current GPU memory usage and VRAM statistics",
+            {}
+        )
+        
+        # ===== SYSTEM INFORMATION =====
+        self.register(
+            "get_system_info",
+            self.executor.get_system_info,
+            "Get comprehensive system information including OS, CPU, RAM, Disk, and GPU specs. Use when user asks about their PC specs, system info, computer details, or hardware.",
+            {}
+        )
+        
+        self.register(
+            "get_pc_specs",
+            self.executor.get_pc_specs,
+            "Get PC specifications as natural language response. Use when user asks 'what are my PC specs?', 'tell me about my computer', 'system specifications'",
             {}
         )
         
@@ -379,7 +403,7 @@ class FunctionRegistry:
         self.register(
             "list_games",
             lambda platform=None, is_follow_up=False: self.executor.list_games(platform=platform, is_follow_up=is_follow_up),
-            "List all detected games from all platforms (or filter by platform: Steam, Epic, GOG)",
+            "List INSTALLED GAMES on user's PC from Steam/Epic/GOG. Use ONLY for: 'list games', 'show my games', 'what games are installed?'. ⚠️ NEVER use for: 'favorite games', 'what games I like', 'which game I love' - those are MEMORY RECALL → use what_do_you_know instead!",
             {"platform": "Optional: platform name to filter (Steam, Epic, GOG, Standalone) or None for all"}
         )
         
@@ -400,9 +424,9 @@ class FunctionRegistry:
         # ===== MUSIC CONTROL =====
         self.register(
             "play_music",
-            lambda song_name=None: self.executor.music_manager.play_song(song_name=song_name) if song_name else self.executor.music_manager.play_random(),
-            "Play music (random if no song specified, or play specific song by name)",
-            {"song_name": "Optional: specific song name to play"}
+            self._play_music_with_prompt,
+            "Play music. If no song specified, ASK the user which song they want. Use for: 'play a song', 'play music'. If song name given, play it directly.",
+            {"song_name": "Optional: specific song name to play. If empty/None, ASK user what to play."}
         )
         
         self.register(
@@ -414,9 +438,17 @@ class FunctionRegistry:
         
         self.register(
             "list_music",
-            lambda limit=None: "\n".join(self.executor.music_manager.list_songs(limit=limit)) if limit else "\n".join(self.executor.music_manager.list_songs()),
-            "List all songs in music library (optionally limit number)",
-            {"limit": "Optional: maximum number of songs to list"}
+            lambda limit=None, artist=None: self.executor.list_music(limit=int(limit) if limit else None, artist=artist),
+            "List songs in music library. Use for: 'list my songs', 'show my music', 'what songs do I have'. Follow-up: 'play the third one'",
+            {"limit": "Optional: maximum number of songs to list", "artist": "Optional: filter by artist name"}
+        )
+        
+        # Alias for list_music (LLM sometimes calls this)
+        self.register(
+            "list_music_library",
+            lambda limit=None, artist=None: self.executor.list_music(limit=int(limit) if limit else None, artist=artist),
+            "Alias for list_music - List songs in music library",
+            {"limit": "Optional: max songs", "artist": "Optional: filter by artist"}
         )
         
         self.register(
@@ -458,6 +490,21 @@ class FunctionRegistry:
             "whats_playing",
             self.executor.music_manager.get_current_track,
             "Get information about currently playing song",
+            {}
+        )
+        
+        # Aliases for whats_playing (LLM sometimes uses different names)
+        self.register(
+            "get_current_music",
+            self.executor.music_manager.get_current_track,
+            "Get currently playing music info",
+            {}
+        )
+        
+        self.register(
+            "get_current_song_info",
+            self.executor.music_manager.get_current_track,
+            "Get current song information",
             {}
         )
         
@@ -532,6 +579,14 @@ class FunctionRegistry:
             "set_light_theme",
             lambda: self.executor.window.switch_theme('light') if self.executor.window else "UI not available",
             "Switch to light theme",
+            {}
+        )
+        
+        # ===== LOCK SCREEN =====
+        self.register(
+            "lock_nexa",
+            lambda: self.executor.window._activate_lock_screen() if self.executor.window else "UI not available",
+            "Lock NEXA with password protection. Voice commands: 'lock nexa', 'lock screen', 'lock yourself'",
             {}
         )
         
@@ -630,93 +685,149 @@ class FunctionRegistry:
         # ===== CONTENT MODE - FORMATTING (Phase 14) =====
         self.register(
             "format_bold",
-            lambda: self.executor.content_box.formatter.toggle_bold() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.toggle_bold() if self.executor.content_window else "Content Mode not active",
             "Apply or remove bold formatting to selected text or at cursor position",
             {}
         )
         
         self.register(
             "format_italic",
-            lambda: self.executor.content_box.formatter.toggle_italic() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.toggle_italic() if self.executor.content_window else "Content Mode not active",
             "Apply or remove italic formatting to selected text or at cursor position",
             {}
         )
         
         self.register(
             "format_underline",
-            lambda: self.executor.content_box.formatter.toggle_underline() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.toggle_underline() if self.executor.content_window else "Content Mode not active",
             "Apply or remove underline formatting to selected text or at cursor position",
             {}
         )
         
         self.register(
             "format_align",
-            lambda alignment: self.executor.content_box.formatter.set_alignment(alignment) if self.executor.content_box else "Content Mode not active",
+            lambda alignment: self.executor.content_window.formatter.set_alignment(alignment) if self.executor.content_window else "Content Mode not active",
             "Set text alignment - left, center, right, or justify",
             {"alignment": "Alignment type: 'left', 'center', 'right', or 'justify'"}
         )
         
         self.register(
             "set_font",
-            lambda font_name: self.executor.content_box.formatter.set_font_family(font_name) if self.executor.content_box else "Content Mode not active",
+            lambda font_name: self.executor.content_window.formatter.set_font_family(font_name) if self.executor.content_window else "Content Mode not active",
             "Change font family (e.g., Arial, Times New Roman, Courier)",
             {"font_name": "Font family name"}
         )
         
         self.register(
             "set_font_size",
-            lambda size: self.executor.content_box.formatter.set_font_size(size) if self.executor.content_box else "Content Mode not active",
+            lambda size: self.executor.content_window.formatter.set_font_size(size) if self.executor.content_window else "Content Mode not active",
             "Set font size in points (8-24)",
             {"size": "Font size in points (8-24)"}
         )
         
         self.register(
             "increase_font_size",
-            lambda: self.executor.content_box.formatter.increase_font_size() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.increase_font_size() if self.executor.content_window else "Content Mode not active",
             "Make font bigger (increase by 2pt)",
             {}
         )
         
         self.register(
             "decrease_font_size",
-            lambda: self.executor.content_box.formatter.decrease_font_size() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.decrease_font_size() if self.executor.content_window else "Content Mode not active",
             "Make font smaller (decrease by 2pt)",
             {}
         )
         
         self.register(
             "create_bullet_list",
-            lambda: self.executor.content_box.formatter.create_bullet_list() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.create_bullet_list() if self.executor.content_window else "Content Mode not active",
             "Create bulleted list from selected paragraphs",
             {}
         )
         
         self.register(
             "create_numbered_list",
-            lambda: self.executor.content_box.formatter.create_numbered_list() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.create_numbered_list() if self.executor.content_window else "Content Mode not active",
             "Create numbered list from selected paragraphs",
             {}
         )
         
         self.register(
             "increase_indent",
-            lambda: self.executor.content_box.formatter.increase_indent() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.increase_indent() if self.executor.content_window else "Content Mode not active",
             "Increase paragraph indentation",
             {}
         )
         
         self.register(
             "decrease_indent",
-            lambda: self.executor.content_box.formatter.decrease_indent() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.decrease_indent() if self.executor.content_window else "Content Mode not active",
             "Decrease paragraph indentation",
             {}
         )
         
         self.register(
             "clear_formatting",
-            lambda: self.executor.content_box.formatter.clear_formatting() if self.executor.content_box else "Content Mode not active",
+            lambda: self.executor.content_window.formatter.clear_formatting() if self.executor.content_window else "Content Mode not active",
             "Remove all formatting from selected text (make it plain text)",
             {}
+        )
+        
+        # ===== FILE SHARING (Phase 15) =====
+        self.register(
+            "share_file",
+            self.executor.share_file,
+            "Open Windows Share dialog with file attached. SMART PATH: Auto-uses last PDF/screenshot if no path given. Say 'share it' or 'share last PDF' or give filename.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file, 'report.pdf' searches common folders, full path works too)"
+            }
+        )
+        
+        self.register(
+            "share_to_whatsapp",
+            self.executor.share_to_whatsapp,
+            "Share file via WhatsApp. SMART PATH: Auto-uses last PDF/screenshot if no path given. Say 'share on WhatsApp' after creating PDF.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file, just filename searches Downloads/Desktop/Documents)"
+            }
+        )
+        
+        self.register(
+            "share_to_phone",
+            self.executor.share_to_phone_nearby,
+            "Share file to phone via Windows Nearby Share. SMART PATH: Auto-uses last file. Say 'share to phone' or 'send to my phone'.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file)"
+            }
+        )
+        
+        self.register(
+            "share_via_phone_link",
+            self.executor.share_via_phone_link,
+            "Share file via Phone Link app to paired phone. SMART PATH: Auto-uses last file. Say 'send via phone link'.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file)"
+            }
+        )
+        
+        self.register(
+            "upload_to_drive",
+            self.executor.upload_to_google_drive,
+            "Upload file to Google Drive. SMART PATH: Auto-uses last PDF/screenshot. Say 'upload to drive' after creating PDF.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file)",
+                "folder": "OPTIONAL: Google Drive subfolder name (default: 'Nexa Shared')"
+            }
+        )
+        
+        self.register(
+            "copy_file_to_clipboard",
+            self.executor.copy_file_to_clipboard_action,
+            "Copy file to clipboard for pasting. SMART PATH: Auto-uses last file. Say 'copy file' or 'copy it to clipboard'.",
+            {
+                "file_path": "OPTIONAL: Path/filename (empty = last file)"
+            }
         )
         
         # ===== NEXA APPLICATION CONTROL =====
@@ -724,6 +835,294 @@ class FunctionRegistry:
             "exit_nexa",
             self.executor.exit_nexa,
             "Exit/close/shutdown Nexa application. Voice commands: 'exit nexa', 'close nexa', 'shutdown nexa', 'quit nexa', 'goodbye nexa', 'bye nexa'",
+            {}
+        )
+        
+        # ===== PHASE 16: SYSTEM POWER CONTROL (via SystemControl module) =====
+        self.register(
+            "lock_screen",
+            self.system_control.lock_screen,
+            "Lock the Windows workstation. Voice commands: 'lock screen', 'lock computer', 'lock my PC'",
+            {}
+        )
+        
+        self.register(
+            "system_sleep",
+            self.system_control.system_sleep,
+            "Put the computer to sleep. Voice commands: 'sleep', 'put computer to sleep', 'go to sleep'",
+            {}
+        )
+        
+        self.register(
+            "system_hibernate",
+            self.system_control.system_hibernate,
+            "Hibernate the computer (saves state to disk). Voice commands: 'hibernate', 'hibernate computer'",
+            {}
+        )
+        
+        self.register(
+            "system_restart",
+            lambda delay_seconds=0: self.system_control.system_restart(delay_seconds=delay_seconds),
+            "Restart the computer. Voice commands: 'restart', 'restart computer', 'reboot'",
+            {"delay_seconds": "Seconds to wait before restart (0 = immediate, default 0)"}
+        )
+        
+        self.register(
+            "system_shutdown",
+            lambda delay_seconds=0: self.system_control.system_shutdown(delay_seconds=delay_seconds),
+            "Shutdown the computer. Voice commands: 'shutdown computer', 'turn off computer', 'power off'. NOTE: This is NOT 'shutdown nexa' - use exit_nexa for that.",
+            {"delay_seconds": "Seconds to wait before shutdown (0 = immediate, default 0)"}
+        )
+        
+        self.register(
+            "schedule_shutdown",
+            lambda minutes=30: self.system_control.schedule_shutdown(minutes=minutes),
+            "Schedule a shutdown after specified minutes. Voice commands: 'shutdown in 30 minutes', 'schedule shutdown'",
+            {"minutes": "Minutes until shutdown (default 30)"}
+        )
+        
+        self.register(
+            "schedule_restart",
+            lambda minutes=5: self.system_control.schedule_restart(minutes=minutes),
+            "Schedule a restart after specified minutes. Voice commands: 'restart in 5 minutes', 'schedule restart'",
+            {"minutes": "Minutes until restart (default 5)"}
+        )
+        
+        self.register(
+            "cancel_shutdown",
+            self.system_control.cancel_shutdown,
+            "Cancel a scheduled shutdown or restart. Voice commands: 'cancel shutdown', 'abort shutdown', 'stop shutdown', 'cancel restart'",
+            {}
+        )
+        
+        # ===== PHASE 16: POWER PLANS =====
+        self.register(
+            "get_power_plan",
+            self.system_control.get_power_plan,
+            "Get the current active power plan. Voice commands: 'what power plan', 'current power plan', 'power mode'",
+            {}
+        )
+        
+        self.register(
+            "list_power_plans",
+            self.system_control.list_power_plans,
+            "List all available power plans. Voice commands: 'list power plans', 'show power plans'",
+            {}
+        )
+        
+        self.register(
+            "set_power_plan",
+            lambda plan: self.system_control.set_power_plan(plan=plan),
+            "Switch to a different power plan. Voice commands: 'set power plan to balanced', 'high performance mode', 'power saver mode'",
+            {"plan": "Plan name: 'balanced', 'high_performance', 'power_saver', or 'ultimate'"}
+        )
+        
+        # ===== PHASE 16: BATTERY SAVER =====
+        self.register(
+            "enable_battery_saver",
+            self.system_control.enable_battery_saver,
+            "Enable battery saver mode. Voice commands: 'enable battery saver', 'turn on battery saver', 'save battery'",
+            {}
+        )
+        
+        self.register(
+            "disable_battery_saver",
+            self.system_control.disable_battery_saver,
+            "Disable battery saver mode. Voice commands: 'disable battery saver', 'turn off battery saver'",
+            {}
+        )
+        
+        # ===== PHASE 16: BLUETOOTH =====
+        self.register(
+            "get_bluetooth_status",
+            self.system_control.get_bluetooth_status,
+            "Get Bluetooth status (on/off and connected devices). Voice commands: 'bluetooth status', 'is bluetooth on'",
+            {}
+        )
+        
+        self.register(
+            "list_bluetooth_devices",
+            self.system_control.list_bluetooth_devices,
+            "List all paired Bluetooth devices. Voice commands: 'list bluetooth devices', 'show paired devices'",
+            {}
+        )
+        
+        self.register(
+            "open_bluetooth_settings",
+            self.system_control.open_bluetooth_settings,
+            "Open Windows Bluetooth settings to pair or manage devices. Voice commands: 'bluetooth settings', 'pair bluetooth', 'connect to my earbuds'",
+            {}
+        )
+        
+        self.register(
+            "enable_bluetooth",
+            self.system_control.enable_bluetooth,
+            "Enable Bluetooth adapter. Voice commands: 'enable bluetooth', 'turn on bluetooth', 'bluetooth on'",
+            {}
+        )
+        
+        self.register(
+            "disable_bluetooth",
+            self.system_control.disable_bluetooth,
+            "Disable Bluetooth adapter. Voice commands: 'disable bluetooth', 'turn off bluetooth', 'bluetooth off'",
+            {}
+        )
+        
+        # ===== PHASE 16: QUICK SETTINGS =====
+        self.register(
+            "toggle_airplane_mode",
+            self.system_control.toggle_airplane_mode,
+            "Open airplane mode settings. Voice commands: 'airplane mode', 'flight mode', 'toggle airplane mode'",
+            {}
+        )
+        
+        self.register(
+            "enable_night_light",
+            self.system_control.enable_night_light,
+            "Enable Night Light (blue light filter). Voice commands: 'enable night light', 'turn on night light', 'blue light on'",
+            {}
+        )
+        
+        self.register(
+            "disable_night_light",
+            self.system_control.disable_night_light,
+            "Disable Night Light (blue light filter). Voice commands: 'disable night light', 'turn off night light', 'night light off'",
+            {}
+        )
+        
+        self.register(
+            "toggle_night_light",
+            self.system_control.toggle_night_light,
+            "Open night light settings. Voice commands: 'night light settings'",
+            {}
+        )
+        
+        self.register(
+            "open_accessibility_settings",
+            self.system_control.open_accessibility_settings,
+            "Open Windows accessibility settings. Voice commands: 'accessibility', 'ease of access'",
+            {}
+        )
+        
+        self.register(
+            "open_display_project",
+            self.system_control.open_display_project,
+            "Open display project settings for second screen. Voice commands: 'project settings', 'extend display', 'duplicate screen', 'second screen'",
+            {}
+        )
+        
+        self.register(
+            "open_cast_settings",
+            self.system_control.open_cast_settings,
+            "Open cast settings for wireless displays. Voice commands: 'cast settings', 'connect to TV', 'wireless display', 'miracast'",
+            {}
+        )
+        
+        self.register(
+            "open_nearby_share",
+            self.system_control.open_nearby_share,
+            "Open nearby sharing settings. Voice commands: 'nearby share', 'nearby sharing'",
+            {}
+        )
+        
+        self.register(
+            "check_windows_update",
+            self.system_control.check_windows_update,
+            "Open Windows Update to check for updates. Voice commands: 'check for updates', 'windows update', 'update windows'",
+            {}
+        )
+        
+        self.register(
+            "open_focus_assist",
+            self.system_control.open_focus_assist,
+            "Open focus assist / do not disturb settings. Voice commands: 'focus assist', 'do not disturb', 'focus mode'",
+            {}
+        )
+        
+        # ===== SMART MEMORY (Phase 19) =====
+        self.register(
+            "remember_this",
+            self._remember_this,
+            "Store a fact or preference about the user. Voice commands: 'remember that...', 'note that...'",
+            {"fact": "The fact to remember (e.g., 'I prefer dark theme')"}
+        )
+        
+        self.register(
+            "forget_about",
+            self._forget_about,
+            "Forget memories matching a topic. Voice commands: 'forget about...', 'delete memories about...'",
+            {"topic": "Topic to forget (e.g., 'my old address')"}
+        )
+        
+        self.register(
+            "what_do_you_know",
+            self._what_do_you_know,
+            "🧠🧠🧠 MEMORY RECALL (USE FOR ALL PERSONAL/RELATIONSHIP QUESTIONS!) 🧠🧠🧠 - MANDATORY for: 'who is [any name]', 'my [any relation]' (friend, brother, sister, mother, girlfriend, cousin, boss, etc.), 'do you know [X]', 'tell me about [person]', 'my birthday', 'favorite X'. NEVER say 'I don't know' about people - ALWAYS call this function FIRST!",
+            {"topic": "The person name, relationship type, or info to look up (e.g., 'Saliha', 'brother', 'girlfriend', 'birthday', 'favorite color')"}
+        )
+        
+        self.register(
+            "get_memory_stats",
+            self._get_memory_stats,
+            "Get statistics about stored memories. Voice commands: 'memory stats', 'how many memories'",
+            {}
+        )
+        
+        self.register(
+            "show_memory_panel",
+            self._show_memory_panel,
+            "Open the Memory Management panel. Voice commands: 'show my memories', 'open memory panel', 'manage memories'",
+            {}
+        )
+        
+        self.register(
+            "clear_old_memory",
+            self._clear_old_memory,
+            "Clear memories older than 30 days. Voice commands: 'clear old memories', 'delete old memories', 'cleanup memory'",
+            {}
+        )
+        
+        self.register(
+            "clear_all_memory",
+            self._clear_all_memory,
+            "Clear ALL memories (conversations, knowledge, skills). Voice commands: 'clear all memory', 'wipe memory', 'reset memory', 'forget everything'",
+            {}
+        )
+        
+        self.register(
+            "list_functions",
+            self._list_functions,
+            "List all available Nexa functions/capabilities. Use when user asks: 'what can you do', 'show your abilities', 'list functions', 'what are your features'",
+            {}
+        )
+        
+        # ===== TTS ENGINE CONTROL =====
+        self.register(
+            "switch_tts_engine",
+            self._switch_tts_engine,
+            "Switch TTS voice engine. Options: 'kokoro' (fast, default) or 'coqui' (cloned voice, better emotions). Voice: 'switch to coqui voice', 'use kokoro', 'change voice engine'",
+            {"engine": "TTS engine to use: 'kokoro' (fast) or 'coqui' (cloned voice with emotions)"}
+        )
+        
+        self.register(
+            "get_tts_engine",
+            self._get_tts_engine,
+            "Get the current TTS engine being used. Voice: 'what voice engine are you using', 'which TTS engine'",
+            {}
+        )
+        
+        # ===== PROACTIVE ENGAGEMENT (Phase 29) =====
+        self.register(
+            "accept_proactive_suggestion",
+            self._accept_proactive_suggestion,
+            "User accepts a proactive suggestion. Voice: 'yes', 'sure', 'okay', 'sounds good', 'go ahead' (when responding to a proactive suggestion)",
+            {}
+        )
+        
+        self.register(
+            "decline_proactive_suggestion",
+            self._decline_proactive_suggestion,
+            "User declines a proactive suggestion. Voice: 'no thanks', 'not now', 'I'm fine', 'maybe later' (when responding to a proactive suggestion)",
             {}
         )
     
@@ -753,6 +1152,8 @@ class FunctionRegistry:
         """
         Execute a function by name with parameters.
         
+        Tracks skill usage in Smart Memory for learning.
+        
         Args:
             function_name: Name of function to call
             parameters: Dict of parameter values
@@ -774,6 +1175,9 @@ class FunctionRegistry:
         func_info = self.functions[function_name]
         func = func_info["function"]
         
+        success = False
+        result = None
+        
         try:
             # Call function with or without parameters
             if parameters:
@@ -783,11 +1187,47 @@ class FunctionRegistry:
                 logger.debug(f"Calling {function_name} (no params)")
                 result = func()
             
-            return str(result) if result is not None else "Done"
+            success = True
+            result_str = str(result) if result is not None else "Done"
             
         except Exception as e:
             logger.error(f"Error calling {function_name}: {e}", exc_info=True)
-            return f"Error executing {function_name}: {str(e)}"
+            result_str = f"Error executing {function_name}: {str(e)}"
+            success = False
+        
+        # Track skill in Smart Memory (non-blocking)
+        self._track_skill_async(function_name, parameters or {}, success)
+        
+        return result_str
+    
+    def _track_skill_async(self, action: str, params: Dict[str, Any], success: bool) -> None:
+        """
+        Track skill usage in Smart Memory (background thread).
+        
+        Args:
+            action: Function name
+            params: Parameters used
+            success: Whether it succeeded
+        """
+        if not self.context_manager:
+            return
+        
+        try:
+            import threading
+            
+            def track():
+                try:
+                    sm = getattr(self.context_manager, 'smart_memory', None)
+                    if sm and hasattr(sm, 'track_skill'):
+                        sm.track_skill(action, params, success)
+                        logger.debug(f"🎯 Tracked skill: {action} (success={success})")
+                except Exception as e:
+                    logger.debug(f"Skill tracking failed (non-critical): {e}")
+            
+            threading.Thread(target=track, daemon=True).start()
+            
+        except Exception as e:
+            logger.debug(f"Skill tracking setup failed: {e}")
     
     def get_catalog(self, format_type: str = "detailed") -> str:
         """
@@ -818,6 +1258,103 @@ class FunctionRegistry:
     def list_functions(self) -> list:
         """Get list of all registered function names."""
         return list(self.functions.keys())
+    
+    def _list_functions(self) -> str:
+        """
+        Return a user-friendly summary of NEXA's capabilities.
+        This is the registered function for LLM to call.
+        """
+        capabilities = {
+            "🖥️ System Control": [
+                "Open/close applications",
+                "Adjust volume and brightness",
+                "Window management (minimize, maximize, close)",
+                "Screenshot capture",
+                "System info (battery, CPU, RAM, GPU)"
+            ],
+            "🎵 Music & Media": [
+                "Play/pause/skip music",
+                "Search music library",
+                "Volume control"
+            ],
+            "🌐 Online Features": [
+                "Web search",
+                "Weather information",
+                "PDF creation and sharing"
+            ],
+            "🎮 Gaming": [
+                "List installed games (Steam, Epic, GOG)",
+                "Launch games by name"
+            ],
+            "🧠 Memory & Learning": [
+                "Remember things you tell me",
+                "Recall your preferences",
+                "Learn from our conversations"
+            ],
+            "📝 Text & Content": [
+                "Refine and improve text",
+                "Generate PDFs",
+                "Content mode for focused writing"
+            ],
+            "🔌 Connectivity": [
+                "WiFi status and management",
+                "Network information"
+            ]
+        }
+        
+        lines = [f"I can help you with {len(self.functions)} different functions! Here are my main capabilities:\n"]
+        for category, features in capabilities.items():
+            lines.append(f"\n{category}:")
+            for feature in features:
+                lines.append(f"  • {feature}")
+        
+        lines.append(f"\n\nJust ask naturally - I understand conversational commands!")
+        return "\n".join(lines)
+    
+    def _switch_tts_engine(self, engine: str) -> str:
+        """
+        Switch TTS engine between Kokoro and Coqui.
+        
+        Args:
+            engine: 'kokoro' or 'coqui'
+            
+        Returns:
+            Success/failure message
+        """
+        engine = engine.lower().strip()
+        
+        if engine not in ('kokoro', 'coqui'):
+            return f"Unknown TTS engine '{engine}'. Use 'kokoro' (fast, default) or 'coqui' (cloned voice with emotions)."
+        
+        try:
+            # Access brain through executor
+            if hasattr(self.executor, 'brain') and self.executor.brain:
+                success = self.executor.brain.switch_tts_engine(engine)
+                if success:
+                    if engine == 'coqui':
+                        return "Switched to Coqui XTTS with the cloned voice. This voice has better emotional range but uses more GPU memory."
+                    else:
+                        return "Switched to Kokoro TTS. This is the fast, lightweight engine with the af_heart voice."
+                else:
+                    return f"Failed to switch to {engine} engine. It may not be available."
+            else:
+                return "Cannot switch engine - brain not accessible."
+        except Exception as e:
+            logger.error(f"Error switching TTS engine: {e}")
+            return f"Error switching TTS engine: {str(e)}"
+    
+    def _get_tts_engine(self) -> str:
+        """Get the current TTS engine name."""
+        try:
+            if hasattr(self.executor, 'brain') and self.executor.brain:
+                engine_name = self.executor.brain.get_tts_engine_name()
+                if 'Coqui' in engine_name:
+                    return "I'm currently using the Coqui XTTS engine with the cloned voice for better emotional expressions."
+                else:
+                    return "I'm currently using the Kokoro TTS engine with the af_heart voice. It's fast and lightweight."
+            return "TTS engine info not available."
+        except Exception as e:
+            return f"Error getting TTS engine info: {str(e)}"
     
     def has_function(self, function_name: str) -> bool:
         """Check if function is registered."""
@@ -850,3 +1387,322 @@ class FunctionRegistry:
             Dict with keys 'function', 'description', 'parameters' or None if not found
         """
         return self.functions.get(function_name)
+    
+    # =========================================================================
+    # MUSIC COMMAND IMPLEMENTATIONS
+    # =========================================================================
+    
+    def _play_music_with_prompt(self, song_name: str = None) -> str:
+        """
+        Play music with user prompt if no song specified.
+        
+        If song_name is provided, play that song.
+        If not, ask the user what they want to play (random, specific song, shuffle, etc.)
+        """
+        # Check for keywords that indicate random/shuffle
+        if song_name:
+            song_lower = song_name.lower().strip()
+            if song_lower in ['random', 'shuffle', 'anything', 'surprise me', 'whatever']:
+                return self.executor.music_manager.play_random()
+            elif song_lower:
+                # User specified a song - play it
+                return self.executor.music_manager.play_song(song_name=song_name)
+        
+        # No song specified - ask what they want
+        # Set up follow-up state to wait for user response
+        try:
+            # Use self.context_manager (passed to FunctionRegistry) for reliability
+            context = self.context_manager
+            if not context:
+                # Fallback to executor.brain.context_manager
+                context = getattr(getattr(self.executor, 'brain', None), 'context_manager', None)
+            
+            if not context:
+                logger.error("🎵 No context_manager available!")
+                return "What song would you like me to play?"
+                
+            logger.info(f"🎵 Setting pending intent for play_music")
+            logger.info(f"🎵 IntentState available: {hasattr(context, 'intent_state') and context.intent_state is not None}")
+            
+            if hasattr(context, 'set_pending_intent'):
+                context.set_pending_intent(
+                    intent='play_music',
+                    data_needed='song_name',
+                    collected_data={}
+                )
+                logger.info("🎵 Pending intent SET successfully")
+                
+                # Verify it was set
+                if hasattr(context, 'has_pending_follow_up'):
+                    logger.info(f"🎵 Verification - has_pending_follow_up: {context.has_pending_follow_up()}")
+            else:
+                logger.warning("🎵 set_pending_intent method not found on context_manager!")
+                
+            return "What would you like to play? Say a song name, 'random' for a surprise, or 'list songs' to see options."
+        except Exception as e:
+            logger.error(f"Error setting pending intent: {e}", exc_info=True)
+            return "What song would you like me to play?"
+    
+    # =========================================================================
+    # SMART MEMORY COMMAND IMPLEMENTATIONS (Phase 19)
+    # =========================================================================
+    
+    def _remember_this(self, fact: str) -> str:
+        """Store a fact about the user in Smart Memory."""
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'learn_user_fact') or not context.smart_memory:
+                return "Smart Memory is not available"
+            
+            memory_id = context.learn_user_fact(fact, source='user_stated')
+            if memory_id:
+                return f"Got it! I'll remember: '{fact}'"
+            else:
+                return "I couldn't save that right now"
+        except Exception as e:
+            logger.error(f"Error in remember_this: {e}")
+            return "Something went wrong saving that"
+    
+    def _forget_about(self, topic: str) -> str:
+        """Forget memories matching a topic."""
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'forget_memories') or not context.smart_memory:
+                return "Smart Memory is not available"
+            
+            count = context.forget_memories(topic, limit=10)
+            if count > 0:
+                return f"Done! I forgot {count} memories about '{topic}'"
+            else:
+                return f"I don't have any memories about '{topic}'"
+        except Exception as e:
+            logger.error(f"Error in forget_about: {e}")
+            return "Something went wrong"
+    
+    def _what_do_you_know(self, topic: str) -> str:
+        """
+        Recall knowledge about a topic and provide a NATURAL answer.
+        
+        Prioritizes knowledge facts (explicitly remembered) over conversations.
+        Formats responses naturally like a human would answer.
+        """
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'recall_knowledge_answer') or not context.smart_memory:
+                return "Smart Memory is not available"
+            
+            # Use the new intelligent recall (prioritizes knowledge)
+            result = context.recall_knowledge_answer(topic, limit=3)
+            
+            if not result.get('found'):
+                return f"I don't remember anything about '{topic}'. You can tell me and I'll remember it!"
+            
+            # Get the best matching fact
+            best_fact = result.get('best_match', '')
+            all_facts = result.get('facts', [])
+            
+            # Format response naturally based on the question type
+            response = self._format_knowledge_response(topic, best_fact, all_facts)
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error in what_do_you_know: {e}")
+            return "Something went wrong"
+    
+    def _format_knowledge_response(self, topic: str, best_fact: str, all_facts: list) -> str:
+        """
+        Format knowledge into a natural response.
+        
+        Adds date awareness for temporal questions (birthday, anniversary, etc.)
+        """
+        from datetime import datetime
+        
+        topic_lower = topic.lower()
+        
+        # Handle birthday questions specially
+        if 'birthday' in topic_lower or 'born' in topic_lower:
+            return self._format_birthday_response(best_fact)
+        
+        # Handle anniversary/date-based questions
+        if any(word in topic_lower for word in ['anniversary', 'date', 'when']):
+            return self._format_date_response(best_fact)
+        
+        # For preference questions (favorite X)
+        if 'favorite' in topic_lower or 'prefer' in topic_lower:
+            return self._format_preference_response(topic, best_fact, all_facts)
+        
+        # Generic response - just return the fact naturally
+        if len(all_facts) == 1:
+            return best_fact
+        elif len(all_facts) > 1:
+            # Multiple related facts
+            return f"{best_fact}"  # Return just the most relevant one
+        
+        return best_fact
+    
+    def _format_birthday_response(self, fact: str) -> str:
+        """Format birthday response with date awareness."""
+        from datetime import datetime
+        import re
+        
+        today = datetime.now()
+        
+        # Try to extract date from fact
+        # Common patterns: "December 9", "9th of December", "Dec 9", "12/9"
+        month_names = {
+            'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
+            'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+            'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+            'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12
+        }
+        
+        fact_lower = fact.lower()
+        bday_month = None
+        bday_day = None
+        
+        # Pattern: "December 9" or "Dec 9"
+        for month_name, month_num in month_names.items():
+            pattern = rf'{month_name}\s+(\d{{1,2}})'
+            match = re.search(pattern, fact_lower)
+            if match:
+                bday_month = month_num
+                bday_day = int(match.group(1))
+                break
+            # Pattern: "9th of December" or "9 December"
+            pattern = rf'(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?{month_name}'
+            match = re.search(pattern, fact_lower)
+            if match:
+                bday_month = month_num
+                bday_day = int(match.group(1))
+                break
+        
+        if bday_month and bday_day:
+            # Calculate how close the birthday is
+            try:
+                this_year_bday = datetime(today.year, bday_month, bday_day)
+                next_year_bday = datetime(today.year + 1, bday_month, bday_day)
+                
+                days_since = (today - this_year_bday).days
+                days_until = (this_year_bday - today).days if this_year_bday > today else (next_year_bday - today).days
+                
+                if days_since == 0:
+                    return f"Your birthday is TODAY! 🎂 Happy Birthday!"
+                elif 0 < days_since <= 7:
+                    return f"Your birthday was {days_since} day{'s' if days_since > 1 else ''} ago on {this_year_bday.strftime('%B %d')}! Hope you had a great one! 🎉"
+                elif 0 < days_since <= 30:
+                    return f"Your birthday was recently on {this_year_bday.strftime('%B %d')} - just {days_since} days ago!"
+                elif 0 < days_until <= 7:
+                    return f"Your birthday is coming up in {days_until} day{'s' if days_until > 1 else ''}! It's on {this_year_bday.strftime('%B %d')}. 🎂"
+                elif 0 < days_until <= 30:
+                    return f"Your birthday is on {this_year_bday.strftime('%B %d')} - that's in {days_until} days!"
+                else:
+                    return f"Your birthday is on {this_year_bday.strftime('%B %d')}."
+            except ValueError:
+                pass
+        
+        # Couldn't parse date, return the fact as-is
+        return fact
+    
+    def _format_date_response(self, fact: str) -> str:
+        """Format date-based response."""
+        # For now, return the fact as-is
+        # Could be enhanced to calculate days until/since
+        return fact
+    
+    def _format_preference_response(self, topic: str, best_fact: str, all_facts: list) -> str:
+        """Format preference response naturally."""
+        # Just return the fact - it should already be natural
+        # e.g., "Your favorite color is black"
+        return best_fact
+
+    def _get_memory_stats(self) -> str:
+        """Get memory statistics."""
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'get_memory_stats'):
+                return "Smart Memory is not available"
+            
+            stats = context.get_memory_stats()
+            if stats.get('status') != 'available':
+                return "Smart Memory is not available"
+            
+            return (
+                f"📊 Memory Stats:\n"
+                f"• Conversations: {stats.get('conversations', 0)}\n"
+                f"• Knowledge facts: {stats.get('knowledge', 0)}\n"
+                f"• Skills tracked: {stats.get('skills', 0)}"
+            )
+        except Exception as e:
+            logger.error(f"Error in get_memory_stats: {e}")
+            return "Something went wrong"
+    
+    def _show_memory_panel(self) -> str:
+        """Open the Memory Management panel (via main thread signal)."""
+        try:
+            brain = self.executor.brain
+            if not brain:
+                return "Brain not available"
+            
+            # Get the main window and emit signal to create panel in main thread
+            # This follows the same pattern as Content Mode window creation
+            if hasattr(brain, 'window') and brain.window:
+                if hasattr(brain.window, 'memory_panel_requested'):
+                    brain.window.memory_panel_requested.emit()
+                    return "Opening Memory Panel..."
+                else:
+                    return "Memory Panel signal not available - try clicking the 🧠 button"
+            else:
+                return "Window not available - try clicking the 🧠 button"
+                
+        except Exception as e:
+            logger.error(f"Error opening memory panel: {e}")
+            return f"Couldn't open memory panel: {str(e)}"
+    
+    def _clear_old_memory(self) -> str:
+        """Clear memories older than 30 days."""
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'smart_memory') or not context.smart_memory:
+                return "Smart Memory is not available"
+            
+            deleted = context.smart_memory.prune_old_memories(days=30, keep_important=True)
+            
+            if deleted > 0:
+                return f"Done! I cleared {deleted} old memories (older than 30 days). Important memories were kept."
+            else:
+                return "No old memories to clear. Your memory is already clean!"
+                
+        except Exception as e:
+            logger.error(f"Error in clear_old_memory: {e}")
+            return "Something went wrong while clearing old memories"
+    
+    def _clear_all_memory(self) -> str:
+        """Clear ALL memories (requires confirmation in conversation)."""
+        try:
+            context = self.executor.brain.context_manager
+            if not hasattr(context, 'smart_memory') or not context.smart_memory:
+                return "Smart Memory is not available"
+            
+            result = context.smart_memory.clear_all_memory(include_knowledge=True)
+            total = sum(result.values())
+            
+            if total > 0:
+                return f"Done! I've cleared all my memories. Deleted {result['conversations']} conversations, {result['knowledge']} knowledge facts, and {result['skills']} skill patterns. Starting fresh!"
+            else:
+                return "Memory was already empty. Nothing to clear!"
+                
+        except Exception as e:
+            logger.error(f"Error in clear_all_memory: {e}")
+            return "Something went wrong while clearing memory"
+
+    # ========================================
+    # PHASE 29: PROACTIVE ENGAGEMENT HANDLERS
+    # ========================================
+    
+    def _accept_proactive_suggestion(self) -> str:
+        """Handle user accepting a proactive suggestion."""
+        return self.executor.accept_proactive_suggestion()
+    
+    def _decline_proactive_suggestion(self) -> str:
+        """Handle user declining a proactive suggestion."""
+        return self.executor.decline_proactive_suggestion()

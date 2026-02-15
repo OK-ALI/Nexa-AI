@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXA Neural Memory</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #050510;
+            overflow: hidden;
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            display: none;
+            max-width: 280px;
+            padding: 12px 16px;
+            background: rgba(10, 15, 35, 0.92);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            border-radius: 12px;
+            color: #e0f0ff;
+            font-size: 12px;
+            line-height: 1.5;
+            pointer-events: none;
+            z-index: 100;
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 0 20px rgba(0, 180, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        #tooltip .tt-type {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 6px;
+        }
+        #tooltip .tt-content {
+            color: rgba(200, 225, 255, 0.85);
+            word-break: break-word;
+        }
+        #tooltip .tt-meta {
+            margin-top: 6px;
+            font-size: 10px;
+            color: rgba(150, 190, 240, 0.5);
+        }
+    </style>
+</head>
+<body>
+<canvas id="neuralCanvas"></canvas>
+<div id="tooltip">
+    <div class="tt-type" id="ttType"></div>
+    <div class="tt-content" id="ttContent"></div>
+    <div class="tt-meta" id="ttMeta"></div>
+</div>
+<script>
+/* ═══════════════════════════════════════════════════════════
+   NEXA Neural Memory — HTML5 Canvas Visualization
+   Particle-based neural graph with force-directed layout.
+   Communication to Python via console.log('NEXA:...')
+   ═══════════════════════════════════════════════════════════ */
+(function() {
+"use strict";
+
+var canvas = document.getElementById('neuralCanvas');
+var ctx = canvas.getContext('2d');
+var tooltip = document.getElementById('tooltip');
+var W, H, centerX, centerY;
+
+function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    W = canvas.clientWidth;
+    H = canvas.clientHeight;
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    centerX = W / 2;
+    centerY = H / 2;
+}
+window.addEventListener('resize', function() { resize(); initStars(); });
+resize();
+
+// ── Color Palette ────────────────────────────────────────
+var TYPE_COLORS = {
+    conversation: { r: 0, g: 212, b: 255 },    // cyan
+    knowledge:    { r: 139, g: 92, b: 246 },    // violet
+    skill:        { r: 0, g: 255, b: 136 }      // green
+};
+var DEFAULT_COLOR = { r: 0, g: 212, b: 255 };
+
+// ── State ────────────────────────────────────────────────
+var nodes = [];
+var connections = [];
+var stars = [];
+var time = 0;
+var mouseX = -9999, mouseY = -9999;
+var hoveredNode = null;
+var selectedNode = null;
+var activeFilter = null;        // null = all
+var searchQuery = '';
+var isDark = true;
+
+// ── Physics settings ─────────────────────────────────────
+var REPULSION  = 2800;
+var ATTRACTION = 0.004;
+var DAMPING    = 0.88;
+var CENTER_GRAVITY = 0.002;
+var MAX_VEL    = 2.5;
+
+// ═══════════════════════════════════════════════════════
+// BACKGROUND STARS
+// ═══════════════════════════════════════════════════════
+function initStars() {
+    stars = [];
+    var count = Math.round(W * H / 6000);
+    for (var i = 0; i < count; i++) {
+        stars.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            r: 0.3 + Math.random() * 1.2,
+            phase: Math.random() * Math.PI * 2,
+            speed: 0.3 + Math.random() * 0.7
+        });
+    }
+}
+initStars();
+
+function drawStars() {
+    for (var i = 0; i < stars.length; i++) {
+        var s = stars[i];
+        var alpha = 0.15 + 0.25 * Math.sin(time * s.speed + s.phase);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(180,200,255,' + alpha + ')';
+        ctx.fill();
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// NODE CLASS
+// ═══════════════════════════════════════════════════════
+function NeuralNode(data, index, total) {
+    this.id = data.id || String(index);
+    this.data = data;
+    this.type = data.memory_type || 'conversation';
+    this.content = data.content || data.user_message || data.fact || data.action || 'Memory';
+    this.importance = data.importance || 0.5;
+
+    // Position — spiral layout
+    var angle = index * 0.618 * Math.PI * 2;
+    var radius = 60 + index * 12;
+    this.x = centerX + Math.cos(angle) * radius;
+    this.y = centerY + Math.sin(angle) * radius;
+    this.z = (Math.random() - 0.5) * 2; // parallax depth
+
+    this.vx = 0; this.vy = 0;
+
+    // Visual
+    var col = TYPE_COLORS[this.type] || DEFAULT_COLOR;
+    this.cr = col.r; this.cg = col.g; this.cb = col.b;
+    this.baseRadius = 8 + this.importance * 8;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.freshness = 1.0 - (index / Math.max(total, 1)) * 0.4;
+
+    // State
+    this.hoverT = 0;       // smooth 0-1
+    this.selectT = 0;
+    this.dimT = 0;          // 1 = fully dimmed
+    this.visible = true;
+
+    // Micro-particles orbiting this node
+    this.orbitals = [];
+    var orbCount = 2 + Math.floor(Math.random() * 3);
+    for (var p = 0; p < orbCount; p++) {
+        this.orbitals.push({
+            angle: Math.random() * Math.PI * 2,
+            dist: this.baseRadius * (1.3 + Math.random() * 0.8),
+            speed: 0.01 + Math.random() * 0.015,
+            size: 0.8 + Math.random() * 1.5,
+            phase: Math.random() * Math.PI * 2
+        });
+    }
+
+    // Connections
+    this.connectedIds = [];
+}
+
+NeuralNode.prototype.displayX = function() {
+    var px = (mouseX - centerX) * this.z * 0.03;
+    return this.x + px;
+};
+NeuralNode.prototype.displayY = function() {
+    var py = (mouseY - centerY) * this.z * 0.03;
+    return this.y + py;
+};
+NeuralNode.prototype.radius = function() {
+    var r = this.baseRadius * (0.85 + this.importance * 0.3);
+    r *= 1 + this.selectT * 0.5 + this.hoverT * 0.25;
+    r *= 1 + Math.sin(time * 2 + this.pulsePhase) * 0.06;
+    return r;
+};
+
+// ═══════════════════════════════════════════════════════
+// CONNECTION CLASS
+// ═══════════════════════════════════════════════════════
+function Connection(srcId, tgtId, strength) {
+    this.srcId = srcId;
+    this.tgtId = tgtId;
+    this.strength = strength;
+    this.energy = Math.random();
+    this.active = false;
+}
+
+// ═══════════════════════════════════════════════════════
+// BUILD GRAPH
+// ═══════════════════════════════════════════════════════
+function buildGraph(memories) {
+    nodes = [];
+    connections = [];
+    selectedNode = null;
+    hoveredNode = null;
+
+    for (var i = 0; i < memories.length; i++) {
+        nodes.push(new NeuralNode(memories[i], i, memories.length));
+    }
+
+    // Build word-sets for similarity
+    var wordSets = [];
+    for (var i = 0; i < nodes.length; i++) {
+        var words = {};
+        var tokens = String(nodes[i].content).toLowerCase().split(/\s+/);
+        for (var t = 0; t < tokens.length; t++) {
+            if (tokens[t].length > 2) words[tokens[t]] = true;
+        }
+        wordSets.push(words);
+    }
+
+    // Create connections (top-3 per node)
+    var maxConn = Math.min(3, nodes.length - 1);
+    var connSet = {};
+    for (var i = 0; i < nodes.length; i++) {
+        var scores = [];
+        for (var j = 0; j < nodes.length; j++) {
+            if (i === j) continue;
+            var score = nodes[i].type === nodes[j].type ? 0.3 : 0.1;
+            // Jaccard
+            var wA = wordSets[i], wB = wordSets[j];
+            var inter = 0, union = 0;
+            for (var w in wA) { union++; if (wB[w]) inter++; }
+            for (var w in wB) { if (!wA[w]) union++; }
+            if (union > 0) score += 0.7 * (inter / union);
+            scores.push({ idx: j, score: score });
+        }
+        scores.sort(function(a, b) { return b.score - a.score; });
+        for (var k = 0; k < Math.min(maxConn, scores.length); k++) {
+            if (scores[k].score < 0.15) continue;
+            var key = Math.min(i, scores[k].idx) + '-' + Math.max(i, scores[k].idx);
+            if (!connSet[key]) {
+                connSet[key] = true;
+                var c = new Connection(nodes[i].id, nodes[scores[k].idx].id, scores[k].score);
+                connections.push(c);
+                nodes[i].connectedIds.push(nodes[scores[k].idx].id);
+                nodes[scores[k].idx].connectedIds.push(nodes[i].id);
+            }
+        }
+    }
+
+    notifyStats();
+}
+
+function findNode(id) {
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].id === id) return nodes[i];
+    }
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════
+// PHYSICS
+// ═══════════════════════════════════════════════════════
+function updatePhysics() {
+    if (nodes.length < 2) return;
+
+    for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n.visible) continue;
+        var fx = 0, fy = 0;
+
+        // Repulsion
+        for (var j = 0; j < nodes.length; j++) {
+            if (i === j || !nodes[j].visible) continue;
+            var dx = n.x - nodes[j].x;
+            var dy = n.y - nodes[j].y;
+            var dsq = dx * dx + dy * dy;
+            if (dsq < 1) { dx = Math.random() * 4 - 2; dy = Math.random() * 4 - 2; dsq = 8; }
+            var d = Math.sqrt(dsq);
+            var f = REPULSION / dsq;
+            fx += (dx / d) * f;
+            fy += (dy / d) * f;
+        }
+
+        // Attraction along connections
+        for (var c = 0; c < n.connectedIds.length; c++) {
+            var other = findNode(n.connectedIds[c]);
+            if (!other || !other.visible) continue;
+            var dx = other.x - n.x;
+            var dy = other.y - n.y;
+            var d = Math.sqrt(dx * dx + dy * dy) + 0.1;
+            fx += (dx / d) * d * ATTRACTION;
+            fy += (dy / d) * d * ATTRACTION;
+        }
+
+        // Center gravity
+        fx += (centerX - n.x) * CENTER_GRAVITY;
+        fy += (centerY - n.y) * CENTER_GRAVITY;
+
+        n.vx = (n.vx + fx) * DAMPING;
+        n.vy = (n.vy + fy) * DAMPING;
+        var spd = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+        if (spd > MAX_VEL) { var s = MAX_VEL / spd; n.vx *= s; n.vy *= s; }
+    }
+
+    // Apply
+    var margin = 40;
+    for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n.visible) continue;
+        n.x += n.vx;
+        n.y += n.vy;
+        n.x = Math.max(margin, Math.min(W - margin, n.x));
+        n.y = Math.max(margin, Math.min(H - margin, n.y));
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAWING
+// ═══════════════════════════════════════════════════════
+
+function drawBackground() {
+    var grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.max(W, H) * 0.7);
+    if (isDark) {
+        grad.addColorStop(0, '#0a0a2e');
+        grad.addColorStop(0.5, '#060618');
+        grad.addColorStop(1, '#030308');
+    } else {
+        grad.addColorStop(0, '#f0f4fa');
+        grad.addColorStop(0.5, '#e4eaf4');
+        grad.addColorStop(1, '#d8e0ee');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+}
+
+function drawConnections() {
+    for (var i = 0; i < connections.length; i++) {
+        var c = connections[i];
+        var src = findNode(c.srcId);
+        var tgt = findNode(c.tgtId);
+        if (!src || !tgt || !src.visible || !tgt.visible) continue;
+
+        var sx = src.displayX(), sy = src.displayY();
+        var tx = tgt.displayX(), ty = tgt.displayY();
+
+        // Opacity logic
+        var alpha;
+        if (selectedNode) {
+            alpha = c.active ? 0.6 : 0.04;
+        } else {
+            alpha = 0.08 + c.strength * 0.12;
+        }
+        alpha *= (1 - Math.max(src.dimT, tgt.dimT));
+
+        // Gradient line
+        var grad = ctx.createLinearGradient(sx, sy, tx, ty);
+        var srcA = 'rgba(' + src.cr + ',' + src.cg + ',' + src.cb + ',' + alpha + ')';
+        var tgtA = 'rgba(' + tgt.cr + ',' + tgt.cg + ',' + tgt.cb + ',' + alpha + ')';
+        grad.addColorStop(0, srcA);
+        grad.addColorStop(1, tgtA);
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.8 + c.strength * 1.5;
+        ctx.stroke();
+
+        // Energy particle along connection
+        c.energy = (c.energy + 0.005 + c.strength * 0.003) % 1;
+        if (c.active || Math.random() < 0.15) {
+            var px = sx + (tx - sx) * c.energy;
+            var py = sy + (ty - sy) * c.energy;
+            var eAlpha = alpha * 2.5;
+            var eGrad = ctx.createRadialGradient(px, py, 0, px, py, 5);
+            eGrad.addColorStop(0, 'rgba(255,255,255,' + Math.min(1, eAlpha) + ')');
+            eGrad.addColorStop(0.5, 'rgba(' + src.cr + ',' + src.cg + ',' + src.cb + ',' + (eAlpha * 0.6) + ')');
+            eGrad.addColorStop(1, 'rgba(' + src.cr + ',' + src.cg + ',' + src.cb + ',0)');
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fillStyle = eGrad;
+            ctx.fill();
+        }
+    }
+}
+
+function drawNodes() {
+    // Sort by z for depth layering
+    var sorted = nodes.slice().sort(function(a, b) { return a.z - b.z; });
+
+    for (var i = 0; i < sorted.length; i++) {
+        var n = sorted[i];
+        if (!n.visible) continue;
+
+        var dx = n.displayX(), dy = n.displayY();
+        var r = n.radius();
+        var opacity = (1 - n.dimT) * (0.65 + n.freshness * 0.35);
+        if (opacity < 0.02) continue;
+
+        // ── Outer glow ──
+        var glowR = r * 3;
+        var glowGrad = ctx.createRadialGradient(dx, dy, r * 0.3, dx, dy, glowR);
+        glowGrad.addColorStop(0, 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + (0.2 * opacity * (1 + n.hoverT * 0.5)) + ')');
+        glowGrad.addColorStop(0.5, 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + (0.06 * opacity) + ')');
+        glowGrad.addColorStop(1, 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',0)');
+        ctx.beginPath();
+        ctx.arc(dx, dy, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = glowGrad;
+        ctx.fill();
+
+        // ── Core node ──
+        var coreGrad = ctx.createRadialGradient(dx, dy, 0, dx, dy, r);
+        coreGrad.addColorStop(0, 'rgba(255,255,255,' + (0.85 * opacity) + ')');
+        coreGrad.addColorStop(0.3, 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + (0.9 * opacity) + ')');
+        coreGrad.addColorStop(1, 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + (0.4 * opacity) + ')');
+        ctx.beginPath();
+        ctx.arc(dx, dy, r, 0, Math.PI * 2);
+        ctx.fillStyle = coreGrad;
+        ctx.fill();
+
+        // ── Hover/select ring ──
+        if (n.hoverT > 0.01 || n.selectT > 0.01) {
+            var ringAlpha = Math.max(n.hoverT * 0.5, n.selectT * 0.8) * opacity;
+            ctx.beginPath();
+            ctx.arc(dx, dy, r + 3, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,' + ringAlpha + ')';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        // ── Select pulse ring ──
+        if (n.selectT > 0.5) {
+            var pulseR = r + 6 + Math.sin(time * 3 + n.pulsePhase) * 4;
+            var pulseA = n.selectT * 0.3 * opacity;
+            ctx.beginPath();
+            ctx.arc(dx, dy, pulseR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + pulseA + ')';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // ── Orbiting micro-particles ──
+        for (var p = 0; p < n.orbitals.length; p++) {
+            var orb = n.orbitals[p];
+            orb.angle += orb.speed;
+            var ox = dx + Math.cos(orb.angle) * orb.dist * (1 + n.hoverT * 0.3);
+            var oy = dy + Math.sin(orb.angle) * orb.dist * (1 + n.hoverT * 0.3);
+            var oAlpha = (0.35 + 0.25 * Math.sin(time * 1.5 + orb.phase)) * opacity;
+            ctx.beginPath();
+            ctx.arc(ox, oy, orb.size, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(' + n.cr + ',' + n.cg + ',' + n.cb + ',' + oAlpha + ')';
+            ctx.fill();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// TOOLTIP
+// ═══════════════════════════════════════════════════════
+function showTooltip(node) {
+    var typeLabels = { conversation: 'CONVERSATION', knowledge: 'KNOWLEDGE', skill: 'SKILL' };
+    var typeColors = { conversation: '#00d4ff', knowledge: '#8b5cf6', skill: '#00ff88' };
+    document.getElementById('ttType').textContent = typeLabels[node.type] || 'MEMORY';
+    document.getElementById('ttType').style.color = typeColors[node.type] || '#00d4ff';
+    document.getElementById('ttContent').textContent = node.content.substring(0, 120);
+    document.getElementById('ttMeta').textContent = 'Importance: ' + Math.round(node.importance * 100) + '%';
+
+    var tx = node.displayX() + node.radius() + 15;
+    var ty = node.displayY() - 30;
+    if (tx + 280 > W) tx = node.displayX() - 295;
+    if (ty < 10) ty = 10;
+    if (ty + 100 > H) ty = H - 110;
+
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+    tooltip.style.display = 'block';
+}
+
+function hideTooltip() {
+    tooltip.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════
+// MOUSE INTERACTION
+// ═══════════════════════════════════════════════════════
+canvas.addEventListener('mousemove', function(e) {
+    mouseX = e.offsetX;
+    mouseY = e.offsetY;
+
+    // Hit test
+    var found = null;
+    for (var i = nodes.length - 1; i >= 0; i--) {
+        var n = nodes[i];
+        if (!n.visible) continue;
+        var dx = mouseX - n.displayX();
+        var dy = mouseY - n.displayY();
+        if (Math.sqrt(dx * dx + dy * dy) <= n.radius() * 1.4) {
+            found = n;
+            break;
+        }
+    }
+
+    if (found !== hoveredNode) {
+        hoveredNode = found;
+        canvas.style.cursor = found ? 'pointer' : 'default';
+        if (found) {
+            showTooltip(found);
+            notify({ event: 'nodeHovered', id: found.id });
+        } else {
+            hideTooltip();
+        }
+    } else if (found) {
+        showTooltip(found); // update position
+    }
+});
+
+canvas.addEventListener('mouseleave', function() {
+    mouseX = -9999; mouseY = -9999;
+    hoveredNode = null;
+    hideTooltip();
+});
+
+canvas.addEventListener('click', function(e) {
+    var clickX = e.offsetX, clickY = e.offsetY;
+    var found = null;
+    for (var i = nodes.length - 1; i >= 0; i--) {
+        var n = nodes[i];
+        if (!n.visible) continue;
+        var dx = clickX - n.displayX();
+        var dy = clickY - n.displayY();
+        if (Math.sqrt(dx * dx + dy * dy) <= n.radius() * 1.4) {
+            found = n;
+            break;
+        }
+    }
+
+    selectedNode = found;
+
+    // Update active connections
+    for (var c = 0; c < connections.length; c++) {
+        connections[c].active = false;
+    }
+    if (found) {
+        for (var c = 0; c < connections.length; c++) {
+            if (connections[c].srcId === found.id || connections[c].tgtId === found.id) {
+                connections[c].active = true;
+            }
+        }
+        notify({ event: 'nodeSelected', id: found.id, data: found.data });
+    } else {
+        notify({ event: 'nodeDeselected' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ═══════════════════════════════════════════════════════
+var lastTime = performance.now();
+var physicsAccum = 0;
+
+function animate(now) {
+    var dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    time += dt;
+
+    // Physics at ~30fps
+    physicsAccum += dt;
+    while (physicsAccum >= 0.033) {
+        updatePhysics();
+        physicsAccum -= 0.033;
+    }
+
+    // Smooth transitions
+    for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var hTarget = (hoveredNode === n) ? 1 : 0;
+        var sTarget = (selectedNode === n) ? 1 : 0;
+        var dTarget = 0;
+
+        // Dim logic
+        if (selectedNode && selectedNode !== n) {
+            var isConnected = false;
+            for (var c = 0; c < selectedNode.connectedIds.length; c++) {
+                if (selectedNode.connectedIds[c] === n.id) { isConnected = true; break; }
+            }
+            dTarget = isConnected ? 0.3 : 0.75;
+        }
+
+        n.hoverT  += (hTarget - n.hoverT) * 0.18;
+        n.selectT += (sTarget - n.selectT) * 0.12;
+        n.dimT    += (dTarget - n.dimT)    * 0.08;
+    }
+
+    // Draw
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    if (isDark) drawStars();
+    drawConnections();
+    drawNodes();
+
+    requestAnimationFrame(animate);
+}
+
+// ═══════════════════════════════════════════════════════
+// PYTHON COMMUNICATION (console.log bridge)
+// ═══════════════════════════════════════════════════════
+function notify(data) {
+    console.log('NEXA:' + JSON.stringify(data));
+}
+
+function notifyStats() {
+    var visible = 0;
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].visible) visible++;
+    }
+    notify({ event: 'statsUpdate', total: nodes.length, visible: visible });
+}
+
+// ═══════════════════════════════════════════════════════
+// PUBLIC API (called from Python via runJavaScript)
+// ═══════════════════════════════════════════════════════
+
+window.setMemories = function(jsonStr) {
+    try {
+        var memories = JSON.parse(jsonStr);
+        buildGraph(memories);
+    } catch(e) {
+        console.error('setMemories parse error: ' + e);
+    }
+};
+
+window.filterByType = function(type) {
+    activeFilter = type || null;
+    searchQuery = '';
+    for (var i = 0; i < nodes.length; i++) {
+        nodes[i].visible = !activeFilter || nodes[i].type === activeFilter;
+    }
+    selectedNode = null;
+    hoveredNode = null;
+    hideTooltip();
+    notifyStats();
+};
+
+window.filterNodes = function(query) {
+    searchQuery = (query || '').toLowerCase().trim();
+    if (!searchQuery) {
+        for (var i = 0; i < nodes.length; i++) nodes[i].visible = true;
+    } else {
+        for (var i = 0; i < nodes.length; i++) {
+            var searchable = JSON.stringify(nodes[i].data).toLowerCase();
+            nodes[i].visible = searchable.indexOf(searchQuery) >= 0;
+        }
+    }
+    selectedNode = null;
+    hoveredNode = null;
+    hideTooltip();
+    notifyStats();
+};
+
+window.clearSelection = function() {
+    selectedNode = null;
+    for (var c = 0; c < connections.length; c++) connections[c].active = false;
+    notify({ event: 'nodeDeselected' });
+};
+
+window.getSelectedMemory = function() {
+    return selectedNode ? JSON.stringify(selectedNode.data) : null;
+};
+
+window.setTheme = function(theme) {
+    isDark = !(theme && theme.toLowerCase() === 'light');
+    if (!isDark) {
+        tooltip.style.background = 'rgba(250,252,255,0.95)';
+        tooltip.style.borderColor = 'rgba(0,90,153,0.3)';
+        tooltip.style.color = '#1a1a2e';
+    } else {
+        tooltip.style.background = 'rgba(10,15,35,0.92)';
+        tooltip.style.borderColor = 'rgba(0,212,255,0.4)';
+        tooltip.style.color = '#e0f0ff';
+    }
+};
+
+window.deleteNode = function(id) {
+    nodes = nodes.filter(function(n) { return n.id !== id; });
+    connections = connections.filter(function(c) { return c.srcId !== id && c.tgtId !== id; });
+    if (selectedNode && selectedNode.id === id) selectedNode = null;
+    if (hoveredNode && hoveredNode.id === id) { hoveredNode = null; hideTooltip(); }
+    notifyStats();
+};
+
+window.getNodeCount = function() {
+    return nodes.length;
+};
+
+// ── Start ────────────────────────────────────────────
+requestAnimationFrame(animate);
+window._neuralReady = true;
+
+})();
+</script>
+</body>
+</html>

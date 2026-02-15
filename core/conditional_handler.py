@@ -73,11 +73,33 @@ class ConditionalHandler:
         Returns:
             bool: True if conditional detected
         """
-        text_lower = user_text.lower()
+        text_lower = user_text.lower().strip()
+        
+        # EXCLUDE question patterns - these are NOT conditionals
+        # "When is my birthday?" - interrogative, not conditional
+        # "What is the time?" - interrogative, not conditional
+        question_patterns = [
+            r'^when\s+(?:is|was|are|were|will|would|do|does|did|can|could|should)',  # When is/was/are...
+            r'^when\s+(?:am|have|has)\b',  # When am I / When have you
+            r'when\s+is\s+(?:my|the|your|his|her|their|our)\b',  # When is my/the/your...
+            r'^what\s+', r'^where\s+', r'^who\s+', r'^why\s+', r'^how\s+',  # Other question words
+            r'\?$',  # Ends with question mark
+        ]
+        
+        for pattern in question_patterns:
+            if re.search(pattern, text_lower):
+                return False
         
         # Check for conditional keywords
         for keyword in self.condition_keywords:
             if f' {keyword} ' in f' {text_lower} ':
+                # Additional check: "when" needs action context, not just presence
+                if keyword == 'when':
+                    # "when X happens, do Y" or "do Y when X"
+                    # Must have both condition and action parts
+                    if not re.search(r'when\s+.+(?:,|then)\s+.+', text_lower) and \
+                       not re.search(r'.+\s+when\s+.+', text_lower):
+                        continue  # Skip - doesn't look like conditional
                 return True
         
         return False

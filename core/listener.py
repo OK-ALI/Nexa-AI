@@ -113,12 +113,27 @@ class AudioListener:
         self.state_callback: Optional[Callable] = None  # NEW: Callback for state changes (e.g., RECOGNIZING)
         self.speaker_rejection_callback: Optional[Callable] = None  # NEW: Callback for speaker rejection
         
-        # Wake word detection
-        self.wake_word_enabled = True  # Enable wake word by default
+        # Wake word detection (ENABLED - requires "NEXA" to wake from IDLE)
+        self.wake_word_enabled = True  # Enabled: require wake word to transition IDLE → LISTENING
         self.wake_word = "nexa"  # Primary wake word
         self.wake_word_active = False  # True when wake word detected, waiting for command
         self.wake_word_timeout = 5.0  # Seconds to wait for command after wake word
         self.wake_word_detected_time = 0  # Time when wake word was last detected
+        
+        # Passive mode - when True, only listen for wake word (IDLE state)
+        # When False, process all commands without wake word (LISTENING state)
+        self.passive_mode = True  # Start in passive mode until wake word activates
+        
+        # Listening timeout - return to IDLE after this many seconds of silence
+        self.listening_timeout = 60.0  # Seconds of silence before returning to IDLE (1 minute)
+        self.last_valid_command_time = 0  # Timestamp of last valid command
+        self.listening_started_time = 0  # When listening session started
+        
+        # Proactive mode bypass - when True, skip wake word requirement for one response
+        self.proactive_listening = False  # Set by brain when proactive suggestion is made
+        
+        # Intent state reference - for checking pending follow-ups (set by brain)
+        self.intent_state = None
         
         # Music manager reference (for ducking during speech)
         self.music_manager = None  # Will be set by brain.py after initialization
@@ -325,8 +340,15 @@ class AudioListener:
         """
         self.audio_level_callback = callback
     
-    def start_listening(self):
-        """Start listening for audio input."""
+    def start_listening(self, proactive: bool = None):
+        """Start listening for audio input.
+        
+        Args:
+            proactive: If True, bypass wake word for this session.
+                      If None, preserve existing proactive_listening state.
+        """
+        import time
+        
         if not self.audio:
             logger.error("Cannot start listening - PyAudio not initialized")
             logger.info("🔄 Attempting to reinitialize PyAudio...")
@@ -338,8 +360,22 @@ class AudioListener:
             logger.warning("Already listening")
             return
         
+        # Track listening session start
+        self.listening_started_time = time.time()
+        self.last_valid_command_time = time.time()
+        
+        # Only update proactive mode if explicitly specified
+        # This preserves the flag set by set_proactive_listening() before TTS
+        if proactive is not None:
+            self.proactive_listening = proactive
+        
+        # Check current proactive state for logging
+        is_proactive = self.proactive_listening
+        
         logger.info("🎤 STARTING AUDIO LISTENER...")
-        if self.wake_word_enabled:
+        if is_proactive:
+            logger.info("💜 Proactive mode: Listening for response (no wake word needed)")
+        elif self.wake_word_enabled:
             logger.info("🔔 Wake word mode: Say 'Nexa' to activate, then give your command")
         else:
             logger.info("🔊 Direct mode: Just speak your command (wake word disabled)")
@@ -416,6 +452,83 @@ class AudioListener:
         
         logger.info("🔊 Listening resumed")
     
+    def set_passive_mode(self, passive: bool):
+        """Set passive mode (IDLE) or active mode (LISTENING).
+        
+        Args:
+            passive: True for IDLE (wake word required), False for LISTENING (all commands)
+        """
+        self.passive_mode = passive
+        if passive:
+            logger.info("😴 Passive mode: Wake word required")
+        else:
+            logger.info("👂 Active mode: Processing all commands")
+    
+    def _has_pending_followup(self) -> bool:
+        """Check if there's a pending follow-up intent.
+        
+        Returns:
+            True if NEXA asked a question and is waiting for user response
+        """
+        if self.intent_state:
+            try:
+                has_pending = self.intent_state.has_pending_intent()
+                if has_pending:
+                    logger.debug("🔄 Pending intent detected in intent_state")
+                return has_pending
+            except Exception as e:
+                logger.debug(f"Intent state check error: {e}")
+                return False
+        return False
+    
+    def record_valid_command(self):
+        """Record that a valid command was received (resets listening timeout)."""
+        import time
+        self.last_valid_command_time = time.time()
+        logger.debug("✅ Valid command recorded - listening timeout reset")
+    
+    def check_listening_timeout(self) -> bool:
+        """
+        Check if listening should timeout and return to IDLE.
+        
+        Returns:
+            True if timeout has occurred and we should stop listening
+        """
+        import time
+        
+        if not self.is_listening:
+            return False
+        
+        elapsed = time.time() - self.last_valid_command_time
+        
+        # Proactive mode has a longer timeout (30s) before giving up
+        # This allows user time to respond to proactive suggestion
+        if self.proactive_listening:
+            proactive_timeout = 30.0  # 30 seconds to respond to proactive
+            if elapsed >= proactive_timeout:
+                logger.info(f"💜 Proactive timeout ({proactive_timeout}s) - user didn't respond, returning to IDLE")
+                self.proactive_listening = False  # Reset proactive mode
+                return True
+            return False
+        
+        # Normal timeout for regular listening
+        if elapsed >= self.listening_timeout:
+            logger.info(f"⏰ Listening timeout ({self.listening_timeout}s) - returning to IDLE")
+            return True
+        
+        return False
+    
+    def set_proactive_listening(self, enabled: bool):
+        """
+        Enable/disable proactive listening mode (bypass wake word for one response).
+        
+        Args:
+            enabled: True to enable proactive mode
+        """
+        self.proactive_listening = enabled
+        if enabled:
+            logger.info("💜 Proactive listening enabled - next response won't need wake word")
+    
     def pause_for_user(self):
         """Pause listening when user says 'stop listening' - keeps mic active."""
         self.is_paused = True
@@ -432,6 +545,10 @@ class AudioListener:
             return
         
         self.is_listening = False
+        
+        # Reset modes when stopping (going to IDLE)
+        self.proactive_listening = False
+        self.passive_mode = True  # Next start requires wake word
         
         # Set music to normal mode when listener stops
         if self.music_manager:
@@ -575,8 +692,8 @@ class AudioListener:
                 max_recording_duration = 4.0  # OPTIMIZED: Reduced from 8.0s to 4.0s - stops mic earlier for faster responses
             
             is_speaking = False
-            speech_confidence_threshold = 0.45  # Silero VAD confidence threshold (45% for convenient listening range)
-            min_start_confidence = 0.45  # Lowered to 45% for easier voice detection
+            speech_confidence_threshold = 0.35  # Silero VAD confidence threshold (35% for more sensitive listening)
+            min_start_confidence = 0.35  # Lowered to 35% for easier voice detection
             consecutive_speech_chunks = 0
             consecutive_silence_chunks = 0
             min_consecutive_speech = 2  # FIX: Reduced from 3 to 2 chunks to start recording faster
@@ -671,13 +788,13 @@ class AudioListener:
                     
                     if self.wake_word_enabled:
                         # Wake word mode: Only duck when wake word is active (user giving command)
-                        duck_threshold = 0.60  # 60% - real speech is usually above this
+                        duck_threshold = 0.50  # 50% - real speech is usually above this
                         pre_duck_threshold = 0.90  # Effectively disabled - almost nothing triggers this
                         enable_pre_ducking = self.wake_word_active  # Only pre-duck after wake word detected
                     else:
-                        # Direct mode: Normal thresholds
-                        duck_threshold = 0.45
-                        pre_duck_threshold = 0.15
+                        # Direct mode: Normal thresholds (lowered for sensitivity)
+                        duck_threshold = 0.35
+                        pre_duck_threshold = 0.12
                         enable_pre_ducking = True
                     
                     # PRE-DUCKING: Lower music volume when speech probability detected
@@ -1326,6 +1443,19 @@ class AudioListener:
             # Wake word disabled - return text as-is
             return (True, text)
         
+        # ===== ACTIVE MODE: Process all commands without wake word =====
+        # When not in passive mode (i.e., LISTENING state), accept all commands
+        if not self.passive_mode:
+            logger.debug("👂 Active mode: Processing command directly")
+            return (True, text)
+        
+        # ===== PASSIVE MODE: Only wake word can activate =====
+        # Proactive mode bypass - NEXA initiated, no wake word needed for response
+        if self.proactive_listening:
+            logger.info("💜 Proactive mode: Accepting response without wake word")
+            self.proactive_listening = False  # Reset after one response
+            return (True, text)
+        
         text_lower = text.lower().strip()
         
         # Check if we're in "wake word active" state (already detected, waiting for command)
@@ -1430,16 +1560,30 @@ class AudioListener:
             remaining = text[end_pos:].strip()
             remaining = remaining.lstrip('.,!? ')
             
+            # Also check for command BEFORE wake word (e.g., "Exit Nexa", "Goodbye Nexa")
+            before_wake = text[:start_pos].strip()
+            before_wake = before_wake.rstrip('.,!? ')
+            
             detected_wake = text[start_pos:end_pos]
             
+            # Prefer text after wake word, but use text before if after is empty
+            # This handles both "Nexa open chrome" and "Exit Nexa"
             if remaining:
-                # Wake word + command in same utterance
+                # Wake word + command after (standard: "Nexa, open Chrome")
                 logger.info(f"🎙️ Wake word detected ('{detected_wake}' → 'Nexa'), command: \"{remaining}\"")
                 self.wake_word_active = False
                 # Duck music while processing command
                 if self.music_manager:
                     self.music_manager.enable_ducking()
                 return (True, remaining)
+            elif before_wake:
+                # Command before wake word (e.g., "Exit Nexa", "Goodbye Nexa", "Close Nexa")
+                logger.info(f"🎙️ Wake word detected ('{detected_wake}' → 'Nexa'), command before: \"{before_wake}\"")
+                self.wake_word_active = False
+                # Duck music while processing command
+                if self.music_manager:
+                    self.music_manager.enable_ducking()
+                return (True, before_wake)
             else:
                 # Just the wake word - wait for command
                 logger.info(f"🎙️ Wake word detected ('{detected_wake}' → 'Nexa') - listening for command...")

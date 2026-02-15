@@ -15,14 +15,24 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Slot, Signal
-from PySide6.QtGui import QFont, QMouseEvent
+from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize
+from PySide6.QtGui import QFont, QMouseEvent, QColor
+from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 from core.brain import NexaBrain, NexaState
 from core.config import Config
 from ui.nexa_orb_ui import NexaOrbWidget
+try:
+    from ui.web_orb_widget import WebOrbWidget, WEBENGINE_AVAILABLE
+except ImportError:
+    WEBENGINE_AVAILABLE = False
 from ui.music_indicator import MusicIndicatorWidget
+from ui.live2d_widget import Live2DPetWidget
+from ui.sprite_pet_widget import SpritePetWidget
+from ui.pet_config import PetConfig, PetType
+from ui.pet_quick_actions import PetQuickActions
 from Themes.theme_manager import get_theme_manager
+from core.live2d_engine import set_sdk_path, get_sample_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +45,21 @@ class NexaModernWindow(QMainWindow):
     # Signal for requesting content mode window creation (thread-safe)
     content_mode_requested = Signal(object)  # Signal for content mode (passes executor)
     
+    # Signal for Memory Panel creation (thread-safe)
+    memory_panel_requested = Signal()  # Signal for memory panel
+    
+    # P4: Signal for response text (thread-safe - TTS runs in worker thread)
+    response_text_signal = Signal(str)
+    
     def __init__(self, brain: NexaBrain, config: Config):
         super().__init__()
         self.brain = brain
         self.config = config
+        
+        # Pet widget instance (None until created)
+        self.pet_widget = None
+        self.pet_config = None
+        self.pet_quick_actions = None  # P5: Quick actions for radial menu
         
         # Theme manager - use singleton instance
         self.theme_manager = get_theme_manager()
@@ -47,8 +68,8 @@ class NexaModernWindow(QMainWindow):
         # Connect content mode signals
         self.content_mode_requested.connect(self._create_content_window)
         
-        # Connect executor's close signal (will be connected after executor is created)
-        # This is done in _connect_executor_signals() called from main.py
+        # Connect memory panel signal (thread-safe creation)
+        self.memory_panel_requested.connect(self._toggle_memory_panel)
         
         # Window configuration
         self.setWindowTitle("Nexa AI Assistant")
@@ -61,8 +82,14 @@ class NexaModernWindow(QMainWindow):
         # Dragging support
         self._drag_position = None
         
+# Glow state
+        self._glow_color = QColor("#00D4FF")  # Default idle color
+
         # Build UI
         self._setup_ui()
+
+        # Apply static glow with initial color
+        self._apply_glow()
         
         # Apply initial theme
         self._apply_theme()
@@ -77,7 +104,25 @@ class NexaModernWindow(QMainWindow):
         music_mgr.on_play_started.connect(self.music_indicator.set_playing)
         music_mgr.on_play_stopped.connect(self.music_indicator.set_stopped)
         music_mgr.on_song_changed.connect(self.music_indicator.update_song)
-        logger.info("✅ Music indicator connected to music manager")
+        music_mgr.on_auto_advance.connect(self.music_indicator.update_song)  # Update on auto-advance too!
+        
+        # Connect popup control signals to music manager
+        self.music_indicator.play_pause_requested.connect(self._on_music_play_pause)
+        self.music_indicator.stop_requested.connect(self._on_music_stop)
+        self.music_indicator.random_requested.connect(self._on_music_random)
+        self.music_indicator.next_requested.connect(lambda: music_mgr.next_song())
+        self.music_indicator.previous_requested.connect(lambda: music_mgr.previous_song())
+        self.music_indicator.shuffle_requested.connect(self._on_music_shuffle)
+        self.music_indicator.repeat_requested.connect(self._on_music_repeat)
+        self.music_indicator.volume_requested.connect(self._on_music_volume)
+        
+        logger.info("✅ Music indicator connected to music manager (including popup controls)")
+        
+        # P4: Connect TTS response text callback for pet speech bubble
+        # The callback emits a signal because TTS runs in a worker thread
+        self.response_text_signal.connect(self._on_response_text)
+        self.brain.tts.response_text_callback = lambda text: self.response_text_signal.emit(text)
+        logger.info("✅ Pet speech bubble connected to TTS (thread-safe)")
         
         # Set initial mode button state
         QTimer.singleShot(500, self._update_mode_button)
@@ -129,20 +174,56 @@ class NexaModernWindow(QMainWindow):
         layout = QHBoxLayout(controls)
         layout.setContentsMargins(20, 10, 20, 0)
         
-        # Mode toggle button (Online/Offline)
-        self.mode_btn = QPushButton("🌐 ONLINE")
-        self.mode_btn.setFixedSize(110, 30)
+        # Get icon manager for all PNG icons (need it before mode button)
+        from ui.music_indicator import get_icon_manager
+        self._icon_mgr = get_icon_manager()
+        self._is_dark_theme = True  # Track current theme for icon updates
+        
+        # Mode toggle button (Online/Offline) with PNG icon
+        self.mode_btn = QPushButton(" ONLINE")
+        self.mode_btn.setIcon(self._icon_mgr.get_icon('mode', 20))
+        self.mode_btn.setIconSize(QSize(20, 20))
+        self.mode_btn.setFixedSize(120, 30)
         self.mode_btn.clicked.connect(self._toggle_mode)
         layout.addWidget(self.mode_btn)
         
-        # Theme toggle button
-        self.theme_btn = QPushButton("🌓")
+        # Theme toggle button - with PNG icon
+        self.theme_btn = QPushButton()
+        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
+        self.theme_btn.setIconSize(QSize(22, 22))
         self.theme_btn.setFixedSize(35, 30)
         self.theme_btn.setToolTip("Toggle theme (Dark/Light)")
         self.theme_btn.clicked.connect(self._toggle_theme_manual)
         layout.addWidget(self.theme_btn)
         
-        # Music indicator (hidden by default)
+        # Companion toggle button - with PNG icon
+        self.pet_btn = QPushButton()
+        self.pet_btn.setIcon(self._icon_mgr.get_assistant_icon(22))
+        self.pet_btn.setIconSize(QSize(22, 22))
+        self.pet_btn.setFixedSize(35, 30)
+        self.pet_btn.setToolTip("Toggle Companion")
+        self.pet_btn.clicked.connect(self._toggle_pet)
+        layout.addWidget(self.pet_btn)
+        
+        # Memory Panel toggle button - with PNG icon
+        self.memory_btn = QPushButton()
+        self.memory_btn.setIcon(self._icon_mgr.get_memory_icon(22))
+        self.memory_btn.setIconSize(QSize(22, 22))
+        self.memory_btn.setFixedSize(35, 30)
+        self.memory_btn.setToolTip("Open Memory Panel")
+        self.memory_btn.clicked.connect(self._toggle_memory_panel)
+        layout.addWidget(self.memory_btn)
+        
+        # Music player toggle button - with PNG icon
+        self.music_btn = QPushButton()
+        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark', 22))
+        self.music_btn.setIconSize(QSize(22, 22))
+        self.music_btn.setFixedSize(35, 30)
+        self.music_btn.setToolTip("Open Music Player")
+        self.music_btn.clicked.connect(self._toggle_music_player)
+        layout.addWidget(self.music_btn)
+        
+        # Music indicator (hidden by default, shows when music plays)
         self.music_indicator = MusicIndicatorWidget()
         layout.addWidget(self.music_indicator)
         
@@ -161,16 +242,32 @@ class NexaModernWindow(QMainWindow):
         self._is_maximized = False
         layout.addWidget(self.max_btn)
         
-        # Close
+        # Close button (minimize to tray / hide window)
         self.close_btn = QPushButton("×")
         self.close_btn.setFixedSize(40, 30)
+        self.close_btn.setToolTip("Minimize to tray")
         self.close_btn.clicked.connect(self.close)
         layout.addWidget(self.close_btn)
+        
+        # Lock button
+        self.lock_btn = QPushButton("🔒")
+        self.lock_btn.setFixedSize(40, 30)
+        self.lock_btn.setToolTip("Lock NEXA")
+        self.lock_btn.clicked.connect(self._activate_lock_screen)
+        layout.addWidget(self.lock_btn)
+        
+        # Shutdown button (separate red power button)
+        self.shutdown_btn = QPushButton("⏻")
+        self.shutdown_btn.setFixedSize(40, 30)
+        self.shutdown_btn.setToolTip("Shutdown NEXA (unloads GPU models)")
+        self.shutdown_btn.setObjectName("shutdownBtn")  # For special styling
+        self.shutdown_btn.clicked.connect(self._confirm_shutdown)
+        layout.addWidget(self.shutdown_btn)
         
         return controls
     
     def _create_title_section(self) -> QWidget:
-        """Create NEXA title and AI ASSISTANT subtitle."""
+        """Create NEXA title and AI ASSISTANT subtitle with static glow."""
         title_widget = QWidget()
         title_widget.setStyleSheet("background: transparent;")
         title_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
@@ -183,18 +280,35 @@ class NexaModernWindow(QMainWindow):
         self.title_label = QLabel("NEXA")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setFont(QFont("Segoe UI", 48, QFont.Weight.Bold))  # Smaller font
+        
+        # Static drop shadow glow effect on title
+        self._title_glow = QGraphicsDropShadowEffect(self.title_label)
+        self._title_glow.setOffset(0, 0)
+        self._title_glow.setBlurRadius(25)
+        self._title_glow.setColor(QColor(self._glow_color.red(), self._glow_color.green(), self._glow_color.blue(), 180))
+        self.title_label.setGraphicsEffect(self._title_glow)
         layout.addWidget(self.title_label)
         
         # Subtitle: AI ASSISTANT
         self.subtitle_label = QLabel("AI ASSISTANT")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Normal))  # Smaller font
+        
+        # Static drop shadow glow effect on subtitle (subtler)
+        self._subtitle_glow = QGraphicsDropShadowEffect(self.subtitle_label)
+        self._subtitle_glow.setOffset(0, 0)
+        self._subtitle_glow.setBlurRadius(15)
+        self._subtitle_glow.setColor(QColor(self._glow_color.red(), self._glow_color.green(), self._glow_color.blue(), 120))
+        self.subtitle_label.setGraphicsEffect(self._subtitle_glow)
         layout.addWidget(self.subtitle_label)
         
         return title_widget
     
     def _create_orb_section(self) -> QWidget:
-        """Create the central orb visualization."""
+        """Create the central orb visualization.
+        Uses WebOrbWidget (Phase 17 particle orb) if available,
+        falls back to NexaOrbWidget (QPainter-based).
+        """
         orb_container = QWidget()
         orb_container.setStyleSheet("background: transparent;")
         orb_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -203,8 +317,21 @@ class NexaModernWindow(QMainWindow):
         layout.setContentsMargins(20, 10, 20, 10)  # Reduced margins
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Create orb widget with better sizing for responsiveness
-        self.orb_widget = NexaOrbWidget()
+        # Try Phase 17 particle orb first, fallback to classic QPainter orb
+        if WEBENGINE_AVAILABLE:
+            try:
+                self.orb_widget = WebOrbWidget()
+                self._using_web_orb = True
+                logger.info("✅ Using Phase 17 WebOrbWidget (Particle Orb)")
+            except Exception as e:
+                logger.warning(f"⚠️ WebOrbWidget failed, falling back to classic: {e}")
+                self.orb_widget = NexaOrbWidget()
+                self._using_web_orb = False
+        else:
+            self.orb_widget = NexaOrbWidget()
+            self._using_web_orb = False
+            logger.info("ℹ️ Using classic NexaOrbWidget (WebEngine not available)")
+        
         self.orb_widget.setMinimumSize(400, 400)  # Increased from 300
         # No maximum size - let it grow with window
         self.orb_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -277,7 +404,10 @@ class NexaModernWindow(QMainWindow):
         self.status_responding.setStyleSheet(inactive_style)
         
         # Highlight active with appropriate color
-        if active_status == "LISTENING":
+        # IDLE = all inactive (dimmed), ready for wake word
+        if active_status == "IDLE":
+            pass  # All stay inactive/dimmed
+        elif active_status == "LISTENING":
             self.status_listening.setStyleSheet(listening_style)
         elif active_status == "THINKING":
             self.status_thinking.setStyleSheet(thinking_style)
@@ -302,28 +432,150 @@ class NexaModernWindow(QMainWindow):
         
         # Map NexaState to display state
         state_map = {
-            NexaState.IDLE: "LISTENING",
+            NexaState.IDLE: "IDLE",
             NexaState.LISTENING: "LISTENING",
             NexaState.RECOGNIZING: "LISTENING",
             NexaState.THINKING: "THINKING",
             NexaState.SPEAKING: "RESPONDING",
             NexaState.EXECUTING: "THINKING",
             NexaState.CONTENT_MODE: "CONTENT",
-            NexaState.ERROR: "LISTENING"
+            NexaState.ERROR: "ERROR"
         }
         
         display_state = state_map.get(state, "LISTENING")
+        
+        # Update glow color based on state
+        tm = self.theme_manager
+        glow_color_map = {
+            "IDLE": tm.get_color('orb', 'idle'),
+            "LISTENING": tm.get_color('orb', 'listening'),
+            "THINKING": tm.get_color('orb', 'thinking'),
+            "RESPONDING": tm.get_color('orb', 'responding'),
+            "ERROR": tm.get_color('orb', 'error'),
+            "CONTENT": tm.get_color('orb', 'listening'),
+        }
+        color_hex = glow_color_map.get(display_state, tm.get_color('orb', 'idle'))
+        self._glow_color = QColor(color_hex)
+        
+        # Update static glow with new color
+        self._apply_glow()
         
         # Update orb
         self.orb_widget.set_state(display_state)
         
         # Update status bar
         self._update_status_display(display_state)
+        
+        # Update pet widget if enabled
+        self._update_pet_state(state)
     
     def _on_audio_level(self, audio_level: float, confidence: float = 0.0, 
                         is_listening: bool = False):
         """Handle audio amplitude updates."""
         self.orb_widget.set_audio_amplitude(audio_level)
+    
+    def _apply_glow(self):
+        """Apply static glow on title and subtitle labels using current glow color."""
+        # Title glow: strong, fixed
+        title_color = QColor(self._glow_color.red(), self._glow_color.green(), self._glow_color.blue(), 180)
+        self._title_glow.setBlurRadius(25)
+        self._title_glow.setColor(title_color)
+        
+        # Subtitle glow: subtler
+        sub_color = QColor(self._glow_color.red(), self._glow_color.green(), self._glow_color.blue(), 120)
+        self._subtitle_glow.setBlurRadius(15)
+        self._subtitle_glow.setColor(sub_color)
+    
+    def setup_lock_screen(self, auth_manager):
+        """
+        Attach lock screen overlay to this window.
+        Called from main.py after window creation.
+        """
+        from ui.lock_screen import LockScreen
+        self._auth_manager = auth_manager
+        self._lock_screen = LockScreen(auth_manager, self)
+        self._lock_screen.unlocked.connect(self._on_unlocked)
+        logger.info("🔒 Lock screen attached to main window")
+    
+    def _activate_lock_screen(self):
+        """Show the lock screen overlay."""
+        if hasattr(self, '_lock_screen'):
+            self._lock_screen.activate()
+        else:
+            logger.warning("Lock screen not initialized (no auth_manager)")
+    
+    def _on_unlocked(self):
+        """Handle successful unlock."""
+        logger.info("🔓 Session unlocked")
+    
+    def resizeEvent(self, event):
+        """Keep lock screen covering the full window on resize."""
+        super().resizeEvent(event)
+        if hasattr(self, '_lock_screen') and self._lock_screen.isVisible():
+            self._lock_screen.setGeometry(self.rect())
+    
+    @Slot()
+    def _confirm_shutdown(self):
+        """Confirm and perform graceful shutdown."""
+        from PySide6.QtWidgets import QMessageBox
+        
+        # Create confirmation dialog
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Shutdown NEXA")
+        msg.setText("Are you sure you want to shutdown NEXA?")
+        msg.setInformativeText("This will unload all AI models from GPU memory.")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        
+        # Style the dialog to match dark theme
+        # QMessageBox doesn't inherit parent styles well, so we use explicit dark colors
+        is_dark = self.theme_manager.get_theme_name() == "dark"
+        
+        if is_dark:
+            bg_color = "#0A0F19"
+            text_color = "#FFFFFF"
+            accent = "#00D4FF"
+            surface = "#1a2030"
+        else:
+            bg_color = "#F5F7FA"
+            text_color = "#1a1a1a"
+            accent = "#0066CC"
+            surface = "#FFFFFF"
+        
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {bg_color};
+            }}
+            QMessageBox QLabel {{
+                color: {text_color};
+                font-size: 13px;
+                padding: 10px;
+            }}
+            QPushButton {{
+                min-width: 80px;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                background-color: {surface};
+                color: {accent};
+                border: 1px solid {accent};
+            }}
+            QPushButton:hover {{
+                background-color: {accent};
+                color: white;
+            }}
+            QPushButton:pressed {{
+                background-color: {accent}dd;
+                color: white;
+            }}
+        """)
+        
+        result = msg.exec()
+        
+        if result == QMessageBox.StandardButton.Yes:
+            logger.info("🔌 User confirmed shutdown - initiating graceful exit...")
+            self.close()
     
     @Slot()
     def _toggle_mode(self):
@@ -379,6 +631,88 @@ class NexaModernWindow(QMainWindow):
             """)
             logger.info("🎨 UI updated: OFFLINE mode")
     
+    # ========================================================================
+    # Music Popup Control Handlers
+    # ========================================================================
+    
+    def _on_music_play_pause(self):
+        """Handle play/pause from music popup"""
+        try:
+            music_mgr = self.brain.executor.music_manager
+            if music_mgr.is_playing:
+                music_mgr.pause()
+                self.music_indicator.set_paused(True)
+                logger.info("⏸ Music paused via popup")
+            else:
+                music_mgr.resume()
+                self.music_indicator.set_paused(False)
+                logger.info("▶ Music resumed via popup")
+        except Exception as e:
+            logger.error(f"❌ Music play/pause error: {e}")
+    
+    def _on_music_stop(self):
+        """Handle stop from music popup - completely stops playback"""
+        try:
+            music_mgr = self.brain.executor.music_manager
+            music_mgr.stop()
+            self.music_indicator.set_paused(True)
+            self.music_indicator.popup.set_song_info("", "")
+            self.music_indicator.hide()
+            logger.info("⏹ Music stopped via popup")
+        except Exception as e:
+            logger.error(f"❌ Music stop error: {e}")
+    
+    def _on_music_random(self):
+        """Handle random button - plays a random song from library"""
+        try:
+            music_mgr = self.brain.executor.music_manager
+            result = music_mgr.play_random()
+            self.music_indicator.set_paused(False)
+            logger.info(f"🎲 Random song: {result}")
+        except Exception as e:
+            logger.error(f"❌ Music random error: {e}")
+    
+    def _on_music_shuffle(self):
+        """Handle shuffle toggle from music popup"""
+        try:
+            music_mgr = self.brain.executor.music_manager
+            current_shuffle = getattr(music_mgr, 'shuffle_mode', False)
+            if current_shuffle:
+                music_mgr.disable_shuffle()
+                self.music_indicator.set_shuffle_state(False)
+                logger.info("🔀 Shuffle disabled via popup")
+            else:
+                music_mgr.enable_shuffle()
+                self.music_indicator.set_shuffle_state(True)
+                logger.info("🔀 Shuffle enabled via popup")
+        except Exception as e:
+            logger.error(f"❌ Music shuffle error: {e}")
+    
+    def _on_music_repeat(self):
+        """Handle repeat toggle from music popup"""
+        try:
+            music_mgr = self.brain.executor.music_manager
+            current = getattr(music_mgr, 'repeat_mode', 'off')
+            # Cycle: off -> all -> one -> off
+            modes = ['off', 'all', 'one']
+            next_idx = (modes.index(current) + 1) % len(modes)
+            new_mode = modes[next_idx]
+            music_mgr.set_repeat_mode(new_mode)
+            self.music_indicator.set_repeat_state(new_mode)
+            logger.info(f"🔁 Repeat mode: {new_mode} via popup")
+        except Exception as e:
+            logger.error(f"❌ Music repeat error: {e}")
+    
+    def _on_music_volume(self, level: int):
+        """Handle volume change from music popup"""
+        try:
+            # Use pygame mixer to set volume (0.0 to 1.0)
+            import pygame
+            pygame.mixer.music.set_volume(level / 100.0)
+            logger.info(f"🔊 Music volume: {level}% via popup")
+        except Exception as e:
+            logger.error(f"❌ Music volume error: {e}")
+    
     def _update_mode_button(self):
         """Update mode button to reflect current mode."""
         current_mode = self.brain.llm_manager.get_current_mode()
@@ -387,11 +721,23 @@ class NexaModernWindow(QMainWindow):
     def _auto_start(self):
         """Auto-start the assistant."""
         logger.info("🚀 Auto-starting Nexa...")
-        self.brain.start_listening()
-        QTimer.singleShot(2000, self._speak_greeting)
+        # Don't start listening yet - wait for greeting to finish
+        # The TTS end callback will start listening in proactive mode
+        QTimer.singleShot(1500, self._speak_greeting)
     
     def _speak_greeting(self):
         """Speak a dynamic, varied greeting with emotional personality."""
+        # Set brain state to IDLE first (before speaking)
+        # This way when TTS ends, the _on_tts_end callback will start listening
+        from core.brain import NexaState
+        self.brain._change_state(NexaState.IDLE)
+        
+        # Start listener in active mode (not proactive) so timeout works normally
+        # Proactive mode should ONLY be used for actual proactive suggestions
+        if self.brain.listener:
+            self.brain.listener.set_passive_mode(False)  # Active mode - accept commands
+            self.brain.listener.start_listening(proactive=False)  # Normal mode with timeout
+        
         user_name = self.config.user_name
         hour = datetime.now().hour
         
@@ -677,6 +1023,11 @@ class NexaModernWindow(QMainWindow):
     def _toggle_theme_manual(self):
         """Toggle theme manually via button click"""
         new_theme = self.theme_manager.toggle_theme()
+        self._is_dark_theme = new_theme == 'dark'
+        # Update theme button icon
+        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
+        # Update music button icon for theme
+        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 22))
         if hasattr(self, 'orb_widget'):
             self.orb_widget.update()  # Force orb repaint
         logger.info(f"🎨 Theme toggled manually: {new_theme}")
@@ -690,6 +1041,11 @@ class NexaModernWindow(QMainWindow):
         """
         if theme_name:
             self.theme_manager.set_theme(theme_name)
+            self._is_dark_theme = theme_name == 'dark'
+            # Update theme button icon
+            self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
+            # Update music button icon for theme
+            self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 22))
             if hasattr(self, 'orb_widget'):
                 self.orb_widget.update()  # Force orb repaint
             logger.info(f"🎤 Theme switched via voice: {theme_name}")
@@ -742,6 +1098,7 @@ class NexaModernWindow(QMainWindow):
         """
         self.min_btn.setStyleSheet(window_btn_style)
         self.max_btn.setStyleSheet(window_btn_style)
+        self.lock_btn.setStyleSheet(window_btn_style)
         
         # Close button
         self.close_btn.setStyleSheet(f"""
@@ -758,6 +1115,21 @@ class NexaModernWindow(QMainWindow):
             }}
         """)
         
+        # Shutdown button (always red for visibility)
+        self.shutdown_btn.setStyleSheet("""
+            QPushButton {
+                background: #8B0000;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #FF0000;
+            }
+        """)
+        
         # Title labels
         self.title_label.setStyleSheet(f"""
             color: {tm.get_color('title', 'main')};
@@ -770,6 +1142,9 @@ class NexaModernWindow(QMainWindow):
             letter-spacing: 4px;
             background: transparent;
         """)
+        
+        # Update glow color to match new theme's idle color
+        self._glow_color = QColor(tm.get_color('orb', 'idle'))
         
         # Update mode button (reapply current mode styling)
         current_mode = self.brain.llm_manager.get_current_mode()
@@ -851,6 +1226,217 @@ class NexaModernWindow(QMainWindow):
             # Reset flag even on error
             if hasattr(self.brain.executor, '_content_mode_exiting'):
                 self.brain.executor._content_mode_exiting = False
+    
+    # --- Pet Widget Management ---
+    def _toggle_pet(self):
+        """Toggle desktop pet on/off."""
+        from pathlib import Path
+        
+        # Initialize pet config if not done
+        if self.pet_config is None:
+            self.pet_config = PetConfig(self.config.user_data_dir / 'config')
+        
+        if self.pet_widget is None or not self.pet_widget.isVisible():
+            # Create and show pet
+            self._create_pet()
+        else:
+            # Hide pet
+            self._hide_pet()
+    
+    def _create_pet(self):
+        """Create and show desktop pet widget (Sprite or Live2D based on config)."""
+        try:
+            from pathlib import Path
+            
+            if self.pet_widget is None:
+                # Initialize pet config
+                if self.pet_config is None:
+                    self.pet_config = PetConfig(self.config.user_data_dir / 'config')
+                
+                # Get pet type from config (defaults to SPRITE)
+                pet_type = self.pet_config.get_pet_type()
+                logger.info(f"🐾 Creating pet widget: {pet_type.value}")
+                
+                if pet_type == PetType.SPRITE:
+                    # Create Sprite-based pet (uses YOUR custom Nexa images!)
+                    assets_dir = Path(__file__).parent.parent / 'assets' / 'pet'
+                    self.pet_widget = SpritePetWidget(
+                        config_dir=self.config.user_data_dir / 'config',
+                        assets_dir=assets_dir
+                    )
+                    logger.info("✅ Sprite pet widget created (animated PNGs)")
+                    
+                    # P7: Initialize personality system for sprite pet
+                    self.pet_widget.init_personality()
+                    logger.info("🎭 Pet personality system initialized")
+                else:
+                    # Create Live2D pet widget
+                    set_sdk_path(r"D:\Live2D\CubismSdkForNative-5-r.4.1")
+                    
+                    # Get Live2D model path (Hiyori with custom Nexa expressions)
+                    model_path = get_sample_model_path()
+                    if not model_path:
+                        model_path = r"D:\Live2D\CubismSdkForNative-5-r.4.1\Samples\Resources\Hiyori\Hiyori.model3.json"
+                    logger.info(f"🐾 Live2D model path: {model_path}")
+                    
+                    self.pet_widget = Live2DPetWidget(
+                        model_path=model_path,
+                        config_dir=self.config.user_data_dir / 'config'
+                    )
+                    logger.info("✅ Live2D pet widget created")
+                
+                # Connect closed signal
+                self.pet_widget.closed.connect(self._on_pet_closed)
+                
+                # P5: Create and connect quick actions for radial menu
+                self._setup_pet_quick_actions()
+            
+            # Show pet
+            self.pet_widget.show()
+            self.pet_widget.raise_()  # Bring to front
+            self.pet_widget.activateWindow()  # Activate window
+            self.pet_config.set('enabled', True)
+            
+            # Update to current brain state
+            current_state = self.brain.state.value
+            self.pet_widget.set_state(current_state)
+            
+            # Debug info
+            logger.info(f"🐾 Pet widget shown at ({self.pet_widget.x()}, {self.pet_widget.y()})")
+            logger.info(f"🐾 Pet widget size: {self.pet_widget.width()}x{self.pet_widget.height()}")
+            logger.info(f"🐾 Pet widget visible: {self.pet_widget.isVisible()}")
+            logger.info(f"🐾 Pet state: {current_state}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create pet widget: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _hide_pet(self):
+        """Hide desktop pet widget."""
+        if self.pet_widget is not None:
+            self.pet_widget.hide()
+            self.pet_config.set('enabled', False)
+            logger.info("🐾 Pet widget hidden")
+    
+    def _on_pet_closed(self):
+        """Handle pet widget being closed."""
+        logger.info("Pet widget was closed by user")
+        # Pet config already updated by widget itself
+    
+    # --- Memory Panel Management (Phase 19) ---
+    def _toggle_memory_panel(self):
+        """Toggle Memory Panel GUI on/off - Using new Neural Memory Panel."""
+        try:
+            # Create panel if not exists
+            if not hasattr(self, 'memory_panel') or self.memory_panel is None:
+                # Use new Neural Memory Panel
+                from ui.neural_memory_panel import NeuralMemoryPanel
+                
+                # Get context manager for Smart Memory access
+                context = None
+                if self.brain and hasattr(self.brain, 'context_manager'):
+                    context = self.brain.context_manager
+                
+                self.memory_panel = NeuralMemoryPanel(
+                    context_manager=context,
+                    auth_manager=getattr(self, '_auth_manager', None),
+                    parent=None
+                )
+                self.memory_panel.closed.connect(lambda: logger.info("🧠 Neural Memory Panel closed"))
+            
+            # Toggle visibility
+            if self.memory_panel.isVisible():
+                self.memory_panel.hide()
+                logger.info("🧠 Neural Memory Panel hidden")
+            else:
+                self.memory_panel.show()
+                self.memory_panel.raise_()
+                self.memory_panel.activateWindow()
+                logger.info("🧠 Neural Memory Panel shown")
+                
+        except Exception as e:
+            logger.error(f"Failed to toggle Neural Memory Panel: {e}")
+            import traceback
+            traceback.print_exc()
+
+    
+    def _toggle_music_player(self):
+        """Toggle the music player popup and ensure library is ready."""
+        try:
+            popup = self.music_indicator.popup
+            music_mgr = self.brain.executor.music_manager
+            
+            # Ensure library is scanned (only happens once)
+            if not music_mgr.indexed:
+                logger.info("🔍 Scanning music library on first open...")
+                music_mgr.scan_library()
+            
+            if popup.isVisible():
+                popup.hide()
+                logger.info("🎵 Music player hidden")
+            else:
+                # Update popup with library info
+                if music_mgr.library:
+                    song_count = len(music_mgr.library)
+                    if not music_mgr.is_playing and not music_mgr.current_track:
+                        # Show song count if nothing is playing
+                        popup.song_title.setText(f"📚 {song_count} songs in library")
+                        popup.artist_label.setText("Click ▶ to play random")
+                
+                # Show popup near the music button
+                global_pos = self.music_btn.mapToGlobal(
+                    QPoint(self.music_btn.width() // 2, self.music_btn.height())
+                )
+                popup.show_at(global_pos)
+                logger.info("🎵 Music player shown")
+        except Exception as e:
+            logger.error(f"Failed to toggle music player: {e}")
+    
+    def _setup_pet_quick_actions(self):
+        """
+        P5: Setup quick actions handler for pet radial menu.
+        
+        Creates PetQuickActions and connects it to the pet widget.
+        """
+        try:
+            # Create quick actions handler
+            self.pet_quick_actions = PetQuickActions(self.brain, self)
+            
+            # Connect to pet widget (works for both Sprite and Live2D)
+            if self.pet_widget and hasattr(self.pet_widget, 'set_quick_actions'):
+                self.pet_widget.set_quick_actions(self.pet_quick_actions)
+                logger.info("✅ P5: Quick actions connected to pet radial menu")
+            else:
+                logger.warning("Pet widget doesn't support quick actions")
+                
+        except Exception as e:
+            logger.error(f"Failed to setup pet quick actions: {e}")
+    
+    def _update_pet_state(self, state: NexaState):
+        """Update pet widget state if it exists and is visible."""
+        if self.pet_widget is not None and self.pet_widget.isVisible():
+            self.pet_widget.set_state(state.value)
+    
+    @Slot(str)
+    def _on_response_text(self, text: str):
+        """
+        P4: Handle response text from TTS.
+        Forwards the text to the pet speech bubble if pet is visible.
+        
+        This method is called via signal from TTS thread, ensuring
+        it runs on the main Qt thread for safe widget updates.
+        
+        Args:
+            text: Response text being spoken by TTS
+        """
+        try:
+            if self.pet_widget is not None and self.pet_widget.isVisible():
+                # Show response in pet speech bubble
+                self.pet_widget.show_response(text)
+                logger.info(f"💬 Response sent to pet speech bubble: {text[:50]}...")
+        except Exception as e:
+            logger.error(f"Error showing pet response: {e}")
     
     # --- Mouse drag support ---
     def mousePressEvent(self, event: QMouseEvent):

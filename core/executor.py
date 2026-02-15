@@ -27,6 +27,15 @@ from .music_manager import MusicManager
 from .weather_service import WeatherService
 from .natural_responses import NaturalResponses
 from .function_registry import FunctionRegistry
+from .sharing_service import SharingService
+from .volume_controller import VolumeController
+from .brightness_controller import BrightnessController
+from .wifi_controller import WiFiController
+from .content_mode_handler import ContentModeHandler
+from .file_share_handler import FileShareHandler
+from .application_controller import ApplicationController
+from .screen_controller import ScreenController
+from .system_info_controller import SystemInfoController
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +67,8 @@ class CommandExecutor(QObject):
         self.window = None  # Reference to NexaModernWindow (set by brain after creation)
         self.gpu_monitor = gpu_monitor  # GPU monitor for usage queries
         
-        # Content Mode tracking
-        self._content_mode_exiting = False  # Flag to track exit in progress
-        
         # Cache for installed applications (populated on demand)
         self._installed_apps_cache = None
-        
-        # Cache for volume interface to prevent COM resource leaks
-        self._volume_interface = None
         
         # Initialize app name mapper for friendly name recognition
         self.app_mapper = AppNameMapper()
@@ -96,6 +99,15 @@ class CommandExecutor(QObject):
         # Initialize music manager for local music playback
         self.music_manager = MusicManager()
         
+        # Initialize sharing service for Phase 15 (multi-platform file sharing)
+        self.sharing_service = SharingService(config)
+        logger.info("Sharing service initialized")
+        
+        # Track recently created/used files for smart sharing
+        self.last_created_pdf: Optional[Path] = None
+        self.last_screenshot: Optional[Path] = None
+        self.last_used_file: Optional[Path] = None
+        
         # Initialize weather service for weather information
         api_key = config.weather_api_key if hasattr(config, 'weather_api_key') else None
         default_location = config.weather_default_location if hasattr(config, 'weather_default_location') else None
@@ -114,7 +126,47 @@ class CommandExecutor(QObject):
             logger.warning("Weather service disabled (no API key)")
         
         # Initialize function registry for dynamic command execution
-        self.function_registry = FunctionRegistry(self)
+        # Pass context_manager for Smart Memory skill tracking
+        self.function_registry = FunctionRegistry(self, context_manager=self.context_manager)
+        
+        # ================================================================
+        # EXTRACTED CONTROLLERS (Refactored from executor.py)
+        # ================================================================
+        
+        # Volume controller for audio management
+        self.volume_controller = VolumeController()
+        
+        # Brightness controller for screen brightness
+        self.brightness_controller = BrightnessController()
+        
+        # WiFi controller for network management
+        self.wifi_controller = WiFiController()
+        
+        # Content Mode handler for text editing and PDF generation
+        self.content_mode_handler = ContentModeHandler(config, self)
+        
+        # File share handler for multi-platform sharing
+        self.file_share_handler = FileShareHandler(config, self.sharing_service, self)
+        
+        # Application controller for app management
+        self.application_controller = ApplicationController(
+            app_discovery=self.app_discovery,
+            app_mapper=self.app_mapper,
+            window_manager=self.window_manager
+        )
+        
+        # Screen controller for screenshots and screen reading
+        self.screen_controller = ScreenController(
+            screen_reader=self.screen_reader,
+            screenshot_manager=self.screenshot_manager,
+            mouse_controller=self.mouse
+        )
+        
+        # System info controller for time, date, battery, GPU
+        self.system_info_controller = SystemInfoController(
+            battery_manager=self.battery_manager,
+            gpu_monitor=self.gpu_monitor
+        )
         
         logger.info(f"Command Executor initialized (OS: {self.os_name})")
         logger.info(f"Function Registry: {len(self.function_registry.functions)} functions available")
@@ -218,347 +270,29 @@ class CommandExecutor(QObject):
         Returns:
             Result message
         """
-        logger.info(f"Opening application: {app_name}")
+        result = self.application_controller.open_application(app_name)
         
-        try:
-            if self.os_name == "Windows":
-                app_lower = app_name.lower().strip()
-                
-                # Step 1: Try built-in Windows commands first (always work)
-                builtin_apps = {
-                    'notepad': 'notepad.exe',
-                    'calculator': 'calc.exe',
-                    'calc': 'calc.exe',
-                    'paint': 'mspaint.exe',
-                    'wordpad': 'write.exe',
-                    'explorer': 'explorer.exe',
-                    'file explorer': 'explorer.exe',
-                    'task manager': 'taskmgr.exe',
-                    'taskmgr': 'taskmgr.exe',
-                    'cmd': 'cmd.exe',
-                    'command prompt': 'cmd.exe',
-                    'powershell': 'powershell.exe',
-                    'control panel': 'control.exe',
-                    'control': 'control.exe',
-                    'settings': 'ms-settings:',
-                }
-                
-                if app_lower in builtin_apps:
-                    executable = builtin_apps[app_lower]
-                    try:
-                        # Launch and verify
-                        process = subprocess.Popen(
-                            executable, 
-                            shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE
-                        )
-                        # Give it a moment to fail if it will (0.1s)
-                        import time
-                        time.sleep(0.1)
-                        
-                        # Check if process failed immediately
-                        if process.poll() is not None and process.returncode != 0:
-                            logger.error(f"Builtin app {app_name} failed with code {process.returncode}")
-                            return NaturalResponses.error()
-                        
-                        logger.info(f"✅ Launched builtin app: {executable}")
-                        return NaturalResponses.app_opened(app_name)
-                    except Exception as launch_error:
-                        logger.error(f"Failed to launch {app_name}: {launch_error}")
-                        return NaturalResponses.error()
-                
-                # Step 2: Use dynamic app discovery (NEW!)
-                logger.info(f"Using dynamic discovery to find: {app_name}")
-                success = self.app_discovery.launch_app(app_name)
-                
-                if success:
-                    return NaturalResponses.app_opened(app_name)
-                else:
-                    # App not found - try fallback methods
-                    logger.warning(f"App discovery failed for: {app_name}")
-                    
-                    # Step 3: Try as direct executable name (fallback)
-                    common_names = [
-                        f'{app_lower}.exe',
-                        f'{app_lower.replace(" ", "")}.exe',
-                        f'{app_lower.replace(" ", "-")}.exe',
-                    ]
-                    
-                    for exe_name in common_names:
-                        try:
-                            # Launch and verify
-                            process = subprocess.Popen(
-                                exe_name, 
-                                shell=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE
-                            )
-                            # Give it a moment to fail if it will
-                            import time
-                            time.sleep(0.1)
-                            
-                            # Check if process failed immediately
-                            if process.poll() is not None and process.returncode != 0:
-                                logger.debug(f"Fallback {exe_name} failed with code {process.returncode}")
-                                continue
-                            
-                            logger.info(f"✅ Launched via fallback: {exe_name}")
-                            return NaturalResponses.app_opened(app_name)
-                        except Exception as fallback_error:
-                            logger.debug(f"Fallback failed for {exe_name}: {fallback_error}")
-                            continue
-                    
-                    # Nothing worked - app not found
-                    logger.error(f"❌ Cannot find app: {app_name}")
-                    return NaturalResponses.app_not_found(app_name)
-            
-            else:  # Linux/Mac
-                subprocess.Popen([app_name])
-                return NaturalResponses.app_opened(app_name)
-        
-        except Exception as e:
-            logger.error(f"Error opening application: {e}")
+        if result.get('success'):
+            return NaturalResponses.app_opened(app_name)
+        elif result.get('not_found'):
+            return NaturalResponses.app_not_found(app_name)
+        else:
             return NaturalResponses.error()
     
     def _find_installed_app(self, app_name: str) -> Optional[str]:
         """
         DEPRECATED: Replaced by AppDiscovery class.
-        This method is kept for backward compatibility but is no longer used.
-        
-        Use self.app_discovery.find_app() instead.
-        
-        Args:
-            app_name: Application name to search for
-            
-        Returns:
-            Full path to executable if found, None otherwise
+        Use self.app_discovery.find_app() or application_controller instead.
         """
-        try:
-            import winreg
-            
-            app_lower = app_name.lower().strip()
-            
-            # Common name mappings for better matching
-            name_variants = [
-                app_lower,
-                app_lower.replace(" ", ""),
-                app_lower.replace(" ", "-"),
-                app_lower.replace("-", ""),
-            ]
-            
-            # Add specific known mappings (enhanced for third-party apps)
-            mappings = {
-                'chrome': ['chrome', 'google chrome', 'googlechrome'],
-                'google chrome': ['chrome', 'google chrome'],
-                'firefox': ['firefox', 'mozilla firefox'],
-                'edge': ['edge', 'msedge', 'microsoft edge'],
-                'microsoft edge': ['edge', 'msedge'],
-                'word': ['winword', 'word', 'microsoft word'],
-                'excel': ['excel', 'microsoft excel'],
-                'powerpoint': ['powerpnt', 'powerpoint'],
-                'outlook': ['outlook', 'microsoft outlook'],
-                'teams': ['teams', 'microsoft teams', 'msteams'],
-                'vscode': ['code', 'vscode', 'visual studio code'],
-                'vs code': ['code', 'vscode'],
-                'visual studio code': ['code', 'vscode'],
-                'spotify': ['spotify'],
-                'discord': ['discord'],
-                'notepad++': ['notepad++', 'notepadplusplus'],
-                'chatgpt': ['chatgpt', 'chat gpt', 'openai'],
-                'chat gpt': ['chatgpt', 'chat gpt'],
-                'steam': ['steam'],
-                'obs': ['obs', 'obs studio', 'obsstudio'],
-                'obs studio': ['obs', 'obs studio'],
-                'slack': ['slack'],
-                'zoom': ['zoom'],
-            }
-            
-            if app_lower in mappings:
-                name_variants.extend(mappings[app_lower])
-            
-            # Search in Windows Registry (Uninstall keys) - Enhanced with HKCU
-            registry_paths = [
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-            ]
-            
-            for hkey, registry_path in registry_paths:
-                try:
-                    key = winreg.OpenKey(hkey, registry_path)
-                    
-                    for i in range(winreg.QueryInfoKey(key)[0]):
-                        try:
-                            subkey_name = winreg.EnumKey(key, i)
-                            subkey = winreg.OpenKey(key, subkey_name)
-                            
-                            try:
-                                display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
-                                display_name_lower = display_name.lower()
-                                
-                                # Check if any variant matches
-                                for variant in name_variants:
-                                    if variant in display_name_lower:
-                                        try:
-                                            # Try to get InstallLocation first
-                                            try:
-                                                install_location = winreg.QueryValueEx(subkey, "InstallLocation")[0]
-                                                if install_location and os.path.exists(install_location):
-                                                    # Search for main exe in install location
-                                                    for file in os.listdir(install_location):
-                                                        if file.lower().endswith('.exe'):
-                                                            # Prefer the exe that matches the app name
-                                                            file_lower = file.lower().replace('.exe', '')
-                                                            if any(v in file_lower for v in name_variants):
-                                                                full_path = os.path.join(install_location, file)
-                                                                logger.info(f"Found {app_name} via registry InstallLocation: {full_path}")
-                                                                return full_path
-                                                    
-                                                    # If no matching exe, return first exe that's not uninstall
-                                                    for file in os.listdir(install_location):
-                                                        if file.lower().endswith('.exe') and 'uninstall' not in file.lower():
-                                                            full_path = os.path.join(install_location, file)
-                                                            logger.info(f"Found {app_name} via registry (first exe): {full_path}")
-                                                            return full_path
-                                            except:
-                                                pass
-                                            
-                                            # Try DisplayIcon (but filter out uninstall.exe)
-                                            try:
-                                                icon_path = winreg.QueryValueEx(subkey, "DisplayIcon")[0]
-                                                if icon_path and icon_path.lower().endswith('.exe'):
-                                                    icon_path = icon_path.split(',')[0].strip('"')
-                                                    
-                                                    # Skip uninstall.exe, try to find the real exe
-                                                    if 'uninstall' in icon_path.lower():
-                                                        install_dir = os.path.dirname(icon_path)
-                                                        if os.path.exists(install_dir):
-                                                            # Look for main exe in same directory
-                                                            for file in os.listdir(install_dir):
-                                                                if file.lower().endswith('.exe'):
-                                                                    file_lower = file.lower().replace('.exe', '')
-                                                                    if any(v in file_lower for v in name_variants) and 'uninstall' not in file_lower:
-                                                                        real_path = os.path.join(install_dir, file)
-                                                                        logger.info(f"Found {app_name} via registry (real exe): {real_path}")
-                                                                        return real_path
-                                                    else:
-                                                        if os.path.exists(icon_path):
-                                                            logger.info(f"Found {app_name} via registry DisplayIcon: {icon_path}")
-                                                            return icon_path
-                                            except:
-                                                pass
-                                        except:
-                                            pass
-                            except:
-                                pass
-                            
-                            winreg.CloseKey(subkey)
-                        except:
-                            continue
-                    
-                    winreg.CloseKey(key)
-                except:
-                    continue
-            
-            # Search common installation directories (Enhanced with WindowsApps)
-            common_paths = [
-                os.path.expandvars(r"%ProgramFiles%"),
-                os.path.expandvars(r"%ProgramFiles(x86)%"),
-                os.path.expandvars(r"%LocalAppData%\Programs"),
-                os.path.expandvars(r"%LocalAppData%\Microsoft\WindowsApps"),  # Microsoft Store apps
-                os.path.expandvars(r"%AppData%"),
-            ]
-            
-            for base_path in common_paths:
-                if not os.path.exists(base_path):
-                    continue
-                
-                try:
-                    for root, dirs, files in os.walk(base_path):
-                        # Limit depth to avoid scanning entire drive
-                        depth = root[len(base_path):].count(os.sep)
-                        if depth > 2:
-                            continue
-                        
-                        for file in files:
-                            if file.lower().endswith('.exe'):
-                                file_lower = file.lower().replace('.exe', '')
-                                for variant in name_variants:
-                                    if variant in file_lower or file_lower in variant:
-                                        exe_path = os.path.join(root, file)
-                                        # Skip uninstall executables
-                                        if 'uninstall' not in exe_path.lower():
-                                            logger.info(f"Found {app_name} via filesystem search: {exe_path}")
-                                            return exe_path
-                except:
-                    continue
-            
-            # Try Start Menu shortcuts as last resort
-            start_menu_paths = [
-                os.path.expandvars(r"%ProgramData%\Microsoft\Windows\Start Menu\Programs"),
-                os.path.expandvars(r"%AppData%\Microsoft\Windows\Start Menu\Programs"),
-            ]
-            
-            for start_menu in start_menu_paths:
-                if not os.path.exists(start_menu):
-                    continue
-                
-                try:
-                    for root, dirs, files in os.walk(start_menu):
-                        for file in files:
-                            if file.lower().endswith('.lnk'):
-                                file_lower = file.lower().replace('.lnk', '')
-                                for variant in name_variants:
-                                    if variant in file_lower:
-                                        lnk_path = os.path.join(root, file)
-                                        # Try to resolve shortcut to actual exe
-                                        try:
-                                            import win32com.client
-                                            shell = win32com.client.Dispatch("WScript.Shell")
-                                            shortcut = shell.CreateShortCut(lnk_path)
-                                            target_path = shortcut.Targetpath
-                                            if target_path and os.path.exists(target_path) and target_path.lower().endswith('.exe'):
-                                                logger.info(f"Found {app_name} via Start Menu shortcut: {target_path}")
-                                                return target_path
-                                        except:
-                                            pass
-                except:
-                    continue
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error finding installed app: {e}")
-            return None
+        return self.application_controller.find_installed_app(app_name)
     
     def get_current_time(self) -> str:
-        """
-        Get current time in natural language.
-        
-        Returns:
-            Time string (time only, no date - natural formatting without zeros)
-        """
-        now = datetime.now()
-        # Natural time formatting: "3:45 PM" not "03:45 PM"
-        hour = now.hour % 12
-        if hour == 0:
-            hour = 12
-        minute = now.minute
-        period = "AM" if now.hour < 12 else "PM"
-        
-        return f"It's {hour}:{minute:02d} {period}."
+        """Get current time in natural language."""
+        return self.system_info_controller.get_current_time()
     
     def get_current_date(self) -> str:
-        """
-        Get current date in natural language.
-        
-        Returns:
-            Date string (date only, no time - natural formatting without zeros)
-        """
-        now = datetime.now()
-        # Natural date formatting: "November 9" not "November 09"
-        return f"Today is {now.strftime('%A, %B')} {now.day}, {now.year}."
+        """Get current date in natural language."""
+        return self.system_info_controller.get_current_date()
     
     def search_web(self, query: str) -> str:
         """
@@ -824,785 +558,158 @@ class CommandExecutor(QObject):
             return f"Failed to refresh app list: {str(e)}"
     
     def is_application_running(self, app_name: str) -> bool:
-        """
-        Check if a specific application is currently running.
-        Now supports friendly names like "Microsoft Edge" → "msedge".
-        
-        Args:
-            app_name: Application name to check (friendly or process name)
-            
-        Returns:
-            True if running, False otherwise
-        """
-        try:
-            if self.os_name == "Windows":
-                import psutil
-                
-                # Get all variants of the app name
-                variants = self.app_mapper.get_all_variants(app_name)
-                
-                for proc in psutil.process_iter(['name']):
-                    try:
-                        proc_name = proc.info.get('name', '')
-                        if not proc_name:
-                            continue
-                        
-                        proc_name_lower = proc_name.lower().replace('.exe', '')
-                        
-                        # Check against all variants
-                        for variant in variants:
-                            variant_lower = variant.lower().replace('.exe', '')
-                            if variant_lower and proc_name_lower and (variant_lower == proc_name_lower or 
-                                                                       variant_lower in proc_name_lower or 
-                                                                       proc_name_lower in variant_lower):
-                                logger.info(f"Found running: {proc_name} (searched for: {app_name})")
-                                return True
-                    except:
-                        continue
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error checking if app running: {e}")
-            return False
+        """Check if a specific application is currently running."""
+        return self.application_controller.is_application_running(app_name)
     
     def close_application(self, app_name: str) -> str:
         """
-        Close a running application by name (ENHANCED with active window fallback).
-        Now supports friendly names like "Microsoft Edge" → "msedge".
-        FIX W-14: If app not found by name, closes active window (for user-opened apps).
-        
-        Args:
-            app_name: Application name to close (friendly or process name)
-            
-        Returns:
-            Result message
+        Close a running application by name.
+        Supports friendly names and active window fallback.
         """
-        try:
-            if self.os_name == "Windows":
-                import psutil
-                
-                # Get all variants of the app name
-                variants = self.app_mapper.get_all_variants(app_name)
-                closed_count = 0
-                closed_processes = []
-                
-                for proc in psutil.process_iter(['name', 'pid']):
-                    try:
-                        proc_name = proc.info['name'].lower().replace('.exe', '')
-                        
-                        # Check against all variants
-                        for variant in variants:
-                            variant_lower = variant.lower().replace('.exe', '')
-                            if variant_lower in proc_name or proc_name in variant_lower:
-                                proc.terminate()
-                                closed_processes.append(proc_name)
-                                closed_count += 1
-                                break  # Don't double-count
-                    except:
-                        continue
-                
-                if closed_count > 0:
-                    logger.info(f"Closed {closed_count} instance(s): {', '.join(set(closed_processes))}")
-                    return NaturalResponses.app_closed(app_name)
-                else:
-                    # FIX W-14: App not found by name - try active window fallback
-                    # This handles cases like "close this" or "close chrome" when user opened it manually
-                    logger.info(f"⚠️ {app_name} not found in processes, trying active window fallback...")
-                    
-                    # Check if active window matches the app name
-                    window_info = self.window_manager.get_active_window_info()
-                    if window_info:
-                        _, title, process_name = window_info
-                        process_lower = process_name.lower().replace('.exe', '')
-                        
-                        # Check if active window's process matches the app we're trying to close
-                        for variant in variants:
-                            variant_lower = variant.lower().replace('.exe', '')
-                            if variant_lower in process_lower or process_lower in variant_lower or variant_lower in title.lower():
-                                # Active window matches! Close it
-                                result = self.window_manager.close_active_window()
-                                logger.info(f"✅ Closed active window via fallback: {title}")
-                                return result
-                    
-                    # Active window doesn't match, return not running
-                    logger.warning(f"{app_name} is not running (tried: {', '.join(variants)})")
-                    return NaturalResponses.app_not_running(app_name)
-            
-            return "Application closing only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error closing application: {e}")
-            return f"Failed to close {app_name}: {str(e)}"
+        result = self.application_controller.close_application(app_name)
+        
+        if result.get('success'):
+            return NaturalResponses.app_closed(app_name)
+        elif result.get('not_running'):
+            return NaturalResponses.app_not_running(app_name)
+        else:
+            return result.get('message', f"Failed to close {app_name}")
     
     def get_system_info(self) -> str:
         """
-        Get basic system information.
+        Get comprehensive system information.
         
         Returns:
-            System info string
+            System info as natural language string
         """
+        if self.system_info_controller:
+            return self.system_info_controller.get_system_info_message()
+        
+        # Fallback if controller not available
         info = {
             'OS': platform.system(),
             'Version': platform.version(),
             'Machine': platform.machine(),
             'Processor': platform.processor()
         }
-        
-        info_str = "\n".join([f"{key}: {value}" for key, value in info.items()])
-        return f"System Information:\n{info_str}"
+        return "System Information: " + ", ".join([f"{k}: {v}" for k, v in info.items()])
     
-    # ============================================================
-    # VOLUME CONTROL (Native Windows - No nircmd needed!)
-    # ============================================================
-    
-    def _get_volume_interface(self):
-        """Get Windows audio interface using COM. Internal method. Cached to prevent resource leaks."""
-        if self._volume_interface is not None:
-            return self._volume_interface
-            
-        try:
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-            
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume = cast(interface, POINTER(IAudioEndpointVolume))
-            self._volume_interface = volume  # Cache for reuse
-            return volume
-        except Exception as e:
-            logger.error(f"Failed to get volume interface: {e}")
-            return None
-    
-    def _get_volume_value(self) -> int:
+    def get_pc_specs(self) -> str:
         """
-        Get current volume level as integer (0-100).
-        Used internally for calculations.
+        Get PC specifications as natural language.
+        Alias for get_system_info.
         
         Returns:
-            Volume level as integer (0-100), or -1 on error
+            PC specs string
         """
-        try:
-            volume = self._get_volume_interface()
-            if volume:
-                current_vol = volume.GetMasterVolumeLevelScalar()
-                return int(current_vol * 100)
-            return -1
-        except Exception as e:
-            logger.error(f"Error getting volume value: {e}")
-            return -1
+        return self.get_system_info()
+    
+    # ============================================================
+    # VOLUME CONTROL - Delegated to VolumeController
+    # ============================================================
     
     def get_current_volume(self) -> str:
-        """
-        Get current system volume level and mute status.
-        
-        Returns:
-            Human-readable string with volume level and mute status
-        """
-        try:
-            volume = self._get_volume_interface()
-            if volume:
-                current_vol = volume.GetMasterVolumeLevelScalar()
-                is_muted = volume.GetMute()
-                volume_level = int(current_vol * 100)
-                
-                if is_muted:
-                    return f"Volume is currently muted (set to {volume_level}%)"
-                else:
-                    return f"Volume is at {volume_level}%"
-            return "Unable to get volume level"
-        except Exception as e:
-            logger.error(f"Error getting volume: {e}")
-            return "Error getting volume level"
+        """Get current system volume level and mute status."""
+        return self.volume_controller.get_current_volume()
     
     def set_volume(self, level: int) -> str:
-        """
-        Set system volume to specific level.
-        
-        Args:
-            level: Volume level (0-100)
-            
-        Returns:
-            Result message
-        """
-        try:
-            level = max(0, min(100, level))  # Clamp between 0-100
-            volume = self._get_volume_interface()
-            
-            if volume:
-                volume.SetMasterVolumeLevelScalar(level / 100.0, None)
-                logger.info(f"Volume set to {level}%")
-                return NaturalResponses.volume_set(level)
-            else:
-                return "I couldn't access the volume controls"
-                
-        except Exception as e:
-            logger.error(f"Error setting volume: {e}")
-            return "Sorry, I had trouble adjusting the volume"
+        """Set system volume to specific level (0-100)."""
+        return self.volume_controller.set_volume(level)
     
     def increase_volume(self, amount: int = 10) -> str:
-        """
-        Increase volume by amount.
-        
-        Args:
-            amount: Percentage to increase (default 10)
-            
-        Returns:
-            Result message
-        """
-        current_vol = self._get_volume_value()
-        if current_vol == -1:
-            return "I couldn't get the current volume level"
-        
-        new_vol = min(100, current_vol + amount)
-        if new_vol == current_vol:
-            return "Volume is already at maximum"
-        
-        self.set_volume(new_vol)
-        return NaturalResponses.volume_up()
+        """Increase volume by amount (default 10%)."""
+        return self.volume_controller.increase_volume(amount)
     
     def decrease_volume(self, amount: int = 10) -> str:
-        """
-        Decrease volume by amount.
-        
-        Args:
-            amount: Percentage to decrease (default 10)
-            
-        Returns:
-            Result message
-        """
-        current_vol = self._get_volume_value()
-        if current_vol == -1:
-            return "I couldn't get the current volume level"
-        
-        new_vol = max(0, current_vol - amount)
-        if new_vol == current_vol:
-            return "Volume is already at minimum"
-            
-        self.set_volume(new_vol)
-        return NaturalResponses.volume_down()
+        """Decrease volume by amount (default 10%)."""
+        return self.volume_controller.decrease_volume(amount)
     
     def mute_volume(self) -> str:
-        """
-        Mute system volume.
-        
-        Returns:
-            Result message
-        """
-        try:
-            volume = self._get_volume_interface()
-            if volume:
-                volume.SetMute(1, None)
-                logger.info("Volume muted")
-                return NaturalResponses.volume_mute()
-            return "I couldn't access the volume controls"
-        except Exception as e:
-            logger.error(f"Error muting volume: {e}")
-            return NaturalResponses.error()
+        """Mute system volume."""
+        return self.volume_controller.mute_volume()
     
     def unmute_volume(self) -> str:
-        """
-        Unmute system volume.
-        
-        Returns:
-            Result message
-        """
-        try:
-            volume = self._get_volume_interface()
-            if volume:
-                volume.SetMute(0, None)
-                logger.info("Volume unmuted")
-                return NaturalResponses.volume_unmute()
-            return "I couldn't access the volume controls"
-        except Exception as e:
-            logger.error(f"Error unmuting volume: {e}")
-            return NaturalResponses.error()
+        """Unmute system volume."""
+        return self.volume_controller.unmute_volume()
     
     def toggle_mute(self) -> str:
-        """
-        Toggle mute status.
-        
-        Returns:
-            Result message
-        """
-        _, is_muted = self.get_current_volume()
-        if is_muted:
-            return self.unmute_volume()
-        else:
-            return self.mute_volume()
+        """Toggle mute status."""
+        return self.volume_controller.toggle_mute()
     
     # ============================================================
-    # BRIGHTNESS CONTROL (Native Windows)
+    # BRIGHTNESS CONTROL - Delegated to BrightnessController
     # ============================================================
     
     def get_current_brightness(self) -> str:
-        """
-        Get current screen brightness level.
-        
-        Returns:
-            Human-readable string with brightness level
-        """
-        try:
-            brightness_value = self._get_brightness_value()
-            if brightness_value >= 0:
-                return f"Screen brightness is at {brightness_value}%"
-            return "Unable to get brightness level"
-        except Exception as e:
-            logger.error(f"Error getting brightness: {e}")
-            return "Error getting brightness level"
-    
-    def _get_brightness_value(self) -> int:
-        """
-        Get current brightness as numeric value.
-        
-        Returns:
-            Brightness value (0-100) or -1 on error
-        """
-        try:
-            if self.os_name == "Windows":
-                result = subprocess.run(
-                    'powershell (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness',
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    shell=True
-                )
-                
-                if result.returncode == 0 and result.stdout.strip():
-                    return int(result.stdout.strip())
-            return -1
-        except Exception as e:
-            logger.error(f"Error getting brightness value: {e}")
-            return -1
+        """Get current screen brightness level."""
+        return self.brightness_controller.get_current_brightness()
     
     def set_brightness(self, level: int) -> str:
-        """
-        Set screen brightness to specific level.
-        
-        Args:
-            level: Brightness level (0-100)
-            
-        Returns:
-            Result message
-        """
-        try:
-            level = max(0, min(100, level))  # Clamp between 0-100
-            
-            if self.os_name == "Windows":
-                command = f'powershell (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{level})'
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    shell=True
-                )
-                
-                if result.returncode == 0:
-                    logger.info(f"Brightness set to {level}%")
-                    return NaturalResponses.brightness_set(level)
-                else:
-                    return "Could not change brightness. Your display might not support this feature."
-            
-            return "Brightness control only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error setting brightness: {e}")
-            return NaturalResponses.error()
+        """Set screen brightness to specific level (0-100)."""
+        return self.brightness_controller.set_brightness(level)
     
     def increase_brightness(self, amount: int = 10) -> str:
-        """
-        Increase brightness by amount.
-        
-        Args:
-            amount: Percentage to increase (default 10)
-            
-        Returns:
-            Result message
-        """
-        current = self._get_brightness_value()
-        if current == -1:
-            return "I couldn't get the current brightness level"
-        
-        new_level = min(100, current + amount)
-        if new_level == current:
-            return "Brightness is already at maximum"
-            
-        self.set_brightness(new_level)
-        return NaturalResponses.brightness_up()
+        """Increase brightness by amount (default 10%)."""
+        return self.brightness_controller.increase_brightness(amount)
     
     def decrease_brightness(self, amount: int = 10) -> str:
-        """
-        Decrease brightness by amount.
-        
-        Args:
-            amount: Percentage to decrease (default 10)
-            
-        Returns:
-            Result message
-        """
-        current = self._get_brightness_value()
-        if current == -1:
-            return "I couldn't get the current brightness level"
-        
-        new_level = max(0, current - amount)
-        if new_level == current:
-            return "Brightness is already at minimum"
-            
-        self.set_brightness(new_level)
-        return NaturalResponses.brightness_down()
+        """Decrease brightness by amount (default 10%)."""
+        return self.brightness_controller.decrease_brightness(amount)
     
     # ============================================================
-    # WIFI MANAGEMENT (Native Windows netsh)
+    # WIFI MANAGEMENT - Delegated to WiFiController
     # ============================================================
     
     def get_wifi_status(self) -> str:
-        """
-        Get current WiFi connection status.
-        
-        Returns:
-            WiFi status message
-        """
-        try:
-            if self.os_name == "Windows":
-                result = subprocess.run(
-                    'netsh wlan show interfaces',
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    shell=True
-                )
-                
-                if result.returncode == 0:
-                    output = result.stdout
-                    
-                    # Parse connection status
-                    if "State" in output:
-                        for line in output.split('\n'):
-                            if 'State' in line:
-                                state = line.split(':')[1].strip()
-                                if state == "connected":
-                                    # Get network name
-                                    for l in output.split('\n'):
-                                        if 'SSID' in l and 'BSSID' not in l:
-                                            ssid = l.split(':')[1].strip()
-                                            return f"Connected to {ssid}"
-                                else:
-                                    return f"WiFi is {state}"
-                    return "WiFi adapter not found or disabled"
-                else:
-                    return "Could not get WiFi status"
-            
-            return "WiFi management only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error getting WiFi status: {e}")
-            return f"Failed to get WiFi status: {str(e)}"
+        """Get current WiFi connection status."""
+        return self.wifi_controller.get_wifi_status()
     
     def disconnect_wifi(self) -> str:
-        """
-        Disconnect from current WiFi network.
-        
-        Returns:
-            Result message
-        """
-        try:
-            if self.os_name == "Windows":
-                result = subprocess.run(
-                    'netsh wlan disconnect',
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    shell=True
-                )
-                
-                if result.returncode == 0:
-                    logger.info("Disconnected from WiFi")
-                    return NaturalResponses.wifi_disconnected()
-                else:
-                    return "Could not disconnect WiFi. Make sure WiFi is enabled."
-            
-            return "WiFi management only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error disconnecting WiFi: {e}")
-            return NaturalResponses.error()
+        """Disconnect from current WiFi network."""
+        return self.wifi_controller.disconnect_wifi()
     
     def connect_wifi(self, network_name: str) -> str:
-        """
-        Connect to a WiFi network.
-        
-        Args:
-            network_name: Name of the WiFi network (SSID)
-            
-        Returns:
-            Result message
-        """
-        try:
-            if self.os_name == "Windows":
-                command = f'netsh wlan connect name="{network_name}"'
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    shell=True
-                )
-                
-                if result.returncode == 0 or "successfully" in result.stdout.lower():
-                    logger.info(f"Connected to {network_name}")
-                    return NaturalResponses.wifi_connected(network_name)
-                else:
-                    return f"Could not connect to {network_name}. Make sure the network is in range and saved."
-            
-            return "WiFi management only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error connecting to WiFi: {e}")
-            return NaturalResponses.error()
+        """Connect to a WiFi network by name."""
+        return self.wifi_controller.connect_wifi(network_name)
     
     def list_wifi_networks(self) -> str:
-        """
-        List available WiFi networks.
-        
-        Returns:
-            List of networks or error message
-        """
-        try:
-            if self.os_name == "Windows":
-                result = subprocess.run(
-                    'netsh wlan show networks',
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    shell=True
-                )
-                
-                if result.returncode == 0:
-                    output = result.stdout
-                    networks = []
-                    
-                    for line in output.split('\n'):
-                        # Match format: "SSID 1 : NetworkName" or "SSID 12 : NetworkName"
-                        if line.strip().startswith('SSID') and ':' in line:
-                            # Extract everything after the colon
-                            ssid = line.split(':', 1)[1].strip()
-                            if ssid and ssid != "":
-                                networks.append(ssid)
-                    
-                    if networks:
-                        # Remove duplicates and sort
-                        networks = sorted(list(set(networks)))
-                        network_list = ", ".join(networks)
-                        return f"Available networks: {network_list}"
-                    else:
-                        return "No WiFi networks found"
-                else:
-                    return "Could not scan for networks"
-            
-            return "WiFi management only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error listing WiFi networks: {e}")
-            return f"Failed to list networks: {str(e)}"
+        """List available WiFi networks."""
+        return self.wifi_controller.list_wifi_networks()
     
     def get_saved_wifi_profiles(self) -> str:
-        """
-        Get list of saved WiFi network profiles.
-        
-        Returns:
-            Saved network profiles or error message
-        """
-        try:
-            if self.os_name == "Windows":
-                result = subprocess.run(
-                    'netsh wlan show profiles',
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',  # Fix Unicode error
-                    errors='ignore',   # Ignore problematic characters
-                    timeout=5,
-                    shell=True
-                )
-                
-                if result.returncode == 0:
-                    output = result.stdout
-                    
-                    # Handle case where output is None
-                    if not output:
-                        return "No WiFi profiles found"
-                    
-                    profiles = []
-                    
-                    for line in output.split('\n'):
-                        if 'All User Profile' in line or 'User Profile' in line:
-                            # Extract profile name after colon
-                            if ':' in line:
-                                profile_name = line.split(':')[1].strip()
-                                if profile_name:
-                                    profiles.append(profile_name)
-                    
-                    if profiles:
-                        # Return the first (most recently used) profile
-                        return f"Last used network: {profiles[0]}"
-                    else:
-                        return "No saved WiFi profiles found"
-                else:
-                    return "Could not get WiFi profiles"
-            
-            return "WiFi management only available on Windows"
-            
-        except Exception as e:
-            logger.error(f"Error getting WiFi profiles: {e}")
-            return f"Failed to get profiles: {str(e)}"
+        """Get list of saved WiFi network profiles."""
+        return self.wifi_controller.get_saved_wifi_profiles()
     
     # ========================== SMART TEXT SELECTION (Phase 3.5) ==========================
     
     def find_and_select_text(self, query: str) -> str:
-        """
-        Find text on screen using Gemini Vision and select it.
-        
-        Args:
-            query: Natural language query (e.g., "find the email", "locate word hello")
-            
-        Returns:
-            Success message or error
-        """
-        try:
-            logger.info(f"🔍 Finding and selecting: {query}")
-            
-            # Find text using Gemini Vision
-            result = self.screen_reader.find_text_on_screen(query, active_window_only=True)
-            
-            if not result:
-                return f"Could not find '{query}' on screen"
-            
-            # Select the text
-            success = self.mouse.select_text_region(
-                result['x'], 
-                result['y'], 
-                result['width'], 
-                result['height']
-            )
-            
-            if success:
-                return f"Selected '{result['text']}'"
-            else:
-                return f"Found '{result['text']}' but failed to select it"
-                
-        except Exception as e:
-            logger.error(f"Error in find_and_select_text: {e}")
-            return f"Failed to find and select text: {str(e)}"
+        """Find text on screen using Vision and select it."""
+        result = self.screen_controller.find_and_select_text(query)
+        return result.get('message', f"Failed to find '{query}'")
     
     def find_and_copy_text(self, query: str) -> str:
-        """
-        Find text on screen and copy it to clipboard.
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            Success message with copied text
-        """
-        try:
-            logger.info(f"🔍 Finding and copying: {query}")
-            
-            # Find text
-            result = self.screen_reader.find_text_on_screen(query, active_window_only=True)
-            
-            if not result:
-                return f"Could not find '{query}' on screen"
-            
-            # Select the text
-            if self.mouse.select_text_region(result['x'], result['y'], result['width'], result['height']):
-                # Copy it
-                import time
-                time.sleep(0.2)  # Wait for selection
-                self.mouse.copy_selection()
-                return f"Copied '{result['text']}' to clipboard"
-            else:
-                return f"Found '{result['text']}' but failed to copy it"
-                
-        except Exception as e:
-            logger.error(f"Error in find_and_copy_text: {e}")
-            return f"Failed to find and copy text: {str(e)}"
+        """Find text on screen and copy it to clipboard."""
+        result = self.screen_controller.find_and_copy_text(query)
+        return result.get('message', f"Failed to find '{query}'")
     
     def find_and_delete_text(self, query: str) -> str:
-        """
-        Find text on screen and delete it.
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            Success message
-        """
-        try:
-            logger.info(f"🔍 Finding and deleting: {query}")
-            
-            # Find text
-            result = self.screen_reader.find_text_on_screen(query, active_window_only=True)
-            
-            if not result:
-                return f"Could not find '{query}' on screen"
-            
-            # Select the text
-            if self.mouse.select_text_region(result['x'], result['y'], result['width'], result['height']):
-                # Delete it
-                import time
-                time.sleep(0.2)  # Wait for selection
-                self.mouse.delete_selection()
-                return f"Deleted '{result['text']}'"
-            else:
-                return f"Found '{result['text']}' but failed to delete it"
-                
-        except Exception as e:
-            logger.error(f"Error in find_and_delete_text: {e}")
-            return f"Failed to find and delete text: {str(e)}"
+        """Find text on screen and delete it."""
+        result = self.screen_controller.find_and_delete_text(query)
+        return result.get('message', f"Failed to find '{query}'")
     
     def read_screen_content(self) -> str:
-        """
-        Read all text visible on screen using Gemini Vision.
-        
-        Returns:
-            All visible text or error message
-        """
-        try:
-            logger.info("📄 Reading screen content")
-            content = self.screen_reader.read_screen_content(active_window_only=True)
-            
-            if content:
-                # Truncate for voice response
-                if len(content) > 200:
-                    return f"Screen content: {content[:200]}... and more"
-                else:
-                    return f"Screen content: {content}"
-            else:
-                return "Could not read screen content"
-                
-        except Exception as e:
-            logger.error(f"Error reading screen: {e}")
-            return f"Failed to read screen: {str(e)}"
+        """Read all text visible on screen using Vision."""
+        content = self.screen_controller.read_screen_content()
+        if content:
+            if len(content) > 200:
+                return f"Screen content: {content[:200]}... and more"
+            return f"Screen content: {content}"
+        return "Could not read screen content"
     
     def describe_screen(self) -> str:
-        """
-        Get AI description of what's on screen.
-        
-        Returns:
-            Natural language description
-        """
-        try:
-            logger.info("🖼️ Describing screen")
-            description = self.screen_reader.describe_screen(active_window_only=True)
-            
-            if description:
-                return description
-            else:
-                return "Could not describe screen"
-                
-        except Exception as e:
-            logger.error(f"Error describing screen: {e}")
-            return f"Failed to describe screen: {str(e)}"
+        """Get AI description of what's on screen."""
+        description = self.screen_controller.describe_screen()
+        return description or "Could not describe screen"
     
     def select_all_text(self) -> str:
         """
@@ -1777,117 +884,29 @@ class CommandExecutor(QObject):
     # ==================== Battery Status ====================
     
     def get_battery_status(self) -> str:
-        """
-        Get comprehensive battery status.
-        
-        Returns:
-            Battery status message
-        """
-        logger.info("Getting battery status")
-        return self.battery_manager.get_simple_status()
+        """Get comprehensive battery status."""
+        return self.system_info_controller.get_battery_status()
     
     def get_battery_percentage(self) -> str:
-        """
-        Get battery percentage only.
-        
-        Returns:
-            Battery percentage message
-        """
-        percent = self.battery_manager.get_battery_percentage()
+        """Get battery percentage only."""
+        percent = self.system_info_controller.get_battery_percentage()
         return f"Battery is at {percent}%"
     
     def is_battery_charging(self) -> str:
-        """
-        Check if battery is charging.
-        
-        Returns:
-            Charging status message
-        """
-        is_charging = self.battery_manager.is_charging()
+        """Check if battery is charging."""
+        is_charging = self.system_info_controller.is_battery_charging()
         if is_charging:
             return "Battery is currently charging"
         else:
             return "Battery is not charging (running on battery)"
     
     def get_battery_time_remaining(self) -> str:
-        """
-        Get battery time remaining.
-        
-        Returns:
-            Time remaining message
-        """
-        status = self.battery_manager.get_battery_status()
-        time_left = status.get('time_left_text')
-        percent = status.get('percent', 0)
-        is_charging = status.get('charging', False)
-        
-        if time_left:
-            if is_charging:
-                return f"{time_left} until fully charged"
-            else:
-                return f"{time_left} of battery remaining"
-        else:
-            # Windows doesn't provide time estimate - give percentage-based info
-            if is_charging:
-                if percent >= 95:
-                    return "Almost fully charged"
-                elif percent >= 80:
-                    return "Charging, about 15 to 30 minutes until full"
-                else:
-                    remaining_percent = 100 - percent
-                    # Rough estimate: ~1% per minute charging
-                    estimated_minutes = remaining_percent
-                    if estimated_minutes < 60:
-                        return f"Charging, approximately {estimated_minutes} minutes until full"
-                    else:
-                        estimated_hours = estimated_minutes // 60
-                        return f"Charging, approximately {estimated_hours} hour{'s' if estimated_hours != 1 else ''} until full"
-            else:
-                # On battery - estimate based on percentage
-                if percent >= 80:
-                    return "Battery high, several hours remaining"
-                elif percent >= 50:
-                    return "Battery medium, a few hours remaining"
-                elif percent >= 20:
-                    return "Battery moderate, about an hour or two remaining"
-                else:
-                    return f"Battery low at {percent}%, please charge soon"
+        """Get battery time remaining."""
+        return self.system_info_controller.get_battery_time_remaining()
     
     def get_gpu_usage(self) -> str:
-        """
-        Get current GPU usage and memory statistics.
-        
-        Returns:
-            GPU usage message with VRAM info
-        """
-        logger.info("Getting GPU usage")
-        
-        if not hasattr(self, 'gpu_monitor') or self.gpu_monitor is None:
-            return "GPU monitoring is not available on this system"
-        
-        usage = self.gpu_monitor.get_current_usage()
-        
-        if usage is None:
-            return "Unable to retrieve GPU usage. Make sure you have an NVIDIA GPU and drivers installed"
-        
-        used_mb, total_mb, usage_percent = usage
-        used_gb = used_mb / 1024
-        total_gb = total_mb / 1024
-        
-        # Create natural response
-        if usage_percent < 20:
-            status = "very low"
-        elif usage_percent < 40:
-            status = "low"
-        elif usage_percent < 60:
-            status = "moderate"
-        elif usage_percent < 80:
-            status = "high"
-        else:
-            status = "very high"
-        
-        return (f"GPU memory usage is {status} at {usage_percent:.1f}%. "
-                f"Using {used_gb:.1f} GB out of {total_gb:.1f} GB total VRAM")
+        """Get current GPU usage and memory statistics."""
+        return self.system_info_controller.get_gpu_usage_message()
     
     # ==================== Weather Information ====================
     
@@ -2002,49 +1021,20 @@ class CommandExecutor(QObject):
     # =========================
     
     def take_screenshot(self, copy_to_clipboard: bool = False) -> str:
-        """
-        Take a screenshot of the entire screen.
+        """Take a screenshot of the entire screen."""
+        result = self.screen_controller.take_screenshot(copy_to_clipboard)
         
-        Args:
-            copy_to_clipboard: If True, also copy to clipboard
-            
-        Returns:
-            str: Result message with file path
-        """
-        try:
-            logger.info("Taking screenshot...")
-            success, message, file_path = self.screenshot_manager.take_screenshot(
-                save_to_clipboard=copy_to_clipboard
-            )
-            
-            if success:
-                logger.info(f"✅ Screenshot captured: {file_path}")
-                return message
-            else:
-                return message
-                
-        except Exception as e:
-            error_msg = f"Error taking screenshot: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+        # Track for smart sharing
+        if result.get('success') and result.get('file_path'):
+            self.last_screenshot = Path(result['file_path'])
+            self.last_used_file = Path(result['file_path'])
+        
+        return result.get('message', 'Screenshot failed')
     
     def open_screenshots_folder(self) -> str:
-        """
-        Open the screenshots folder in File Explorer.
-        
-        Returns:
-            str: Result message
-        """
-        try:
-            success = self.screenshot_manager.open_screenshots_folder()
-            if success:
-                return "Opening screenshots folder"
-            else:
-                return "Failed to open screenshots folder"
-        except Exception as e:
-            error_msg = f"Error opening screenshots folder: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+        """Open the screenshots folder in File Explorer."""
+        success = self.screen_controller.open_screenshots_folder()
+        return "Opening screenshots folder" if success else "Failed to open screenshots folder"
     
     def get_screenshot_count(self) -> str:
         """
@@ -2163,6 +1153,49 @@ class CommandExecutor(QObject):
             logger.error(error_msg)
             return error_msg
     
+    def list_music(self, limit: int = None, artist: str = None) -> str:
+        """
+        List songs in music library with follow-up support.
+        
+        Args:
+            limit: Maximum number of songs to list
+            artist: Filter by artist name
+            
+        Returns:
+            str: Formatted list of songs
+        """
+        try:
+            # Get song list from music manager
+            songs = self.music_manager.list_songs(limit=limit, filter_artist=artist)
+            count = len(songs)
+            
+            if count == 0:
+                if artist:
+                    return f"No songs found by {artist}"
+                return "No songs found in your music library"
+            
+            # Store for follow-up (e.g., "play the third one")
+            if self.context_manager:
+                self.context_manager.set_last_action('list_music', {
+                    'songs': songs,
+                    'count': count,
+                    'artist': artist
+                })
+            
+            # Format response
+            if count <= 5:
+                song_list = ", ".join(songs)
+                return f"Found {count} song{'s' if count != 1 else ''}: {song_list}"
+            else:
+                # Show first 5 with count
+                preview = ", ".join(songs[:5])
+                return f"Found {count} songs. Here are some: {preview}, and {count - 5} more"
+                
+        except Exception as e:
+            error_msg = f"Error listing music: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
+
     def open_folder(self, folder_name: str) -> str:
         """
         Open a folder in File Explorer.
@@ -2212,354 +1245,88 @@ class CommandExecutor(QObject):
             return error_msg
     
     # ======================================================================
-    # CONTENT MODE - Text Refinement & PDF Generation
+    # CONTENT MODE - Delegated to ContentModeHandler
     # ======================================================================
     
+    @property
+    def _content_mode_exiting(self) -> bool:
+        """Check if Content Mode is exiting."""
+        return self.content_mode_handler.is_exiting()
+    
+    @_content_mode_exiting.setter
+    def _content_mode_exiting(self, value: bool):
+        """Set the exiting flag via handler."""
+        self.content_mode_handler._is_exiting = value
+
     def enter_content_mode(self) -> str:
-        """
-        Enter Content Mode - Opens Content Box window for text editing and PDF generation.
-        
-        Returns:
-            str: Status message
-        """
-        try:
-            from core.brain import NexaState
-            
-            # Check if already in content mode
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                if self.content_window.isVisible():
-                    self.content_window.raise_()
-                    self.content_window.activateWindow()
-                    return "Content Mode is already active."
-            
-            # Initialize text refiner and PDF generator if not already done
-            if not hasattr(self, 'text_refiner'):
-                from core.text_refiner import TextRefiner
-                # Get llm_manager from brain (set by brain.py after initialization)
-                if hasattr(self, 'brain') and self.brain:
-                    self.text_refiner = TextRefiner(self.brain.llm_manager)
-                else:
-                    return "Cannot enter Content Mode: LLM Manager not available"
-            
-            if not hasattr(self, 'pdf_generator'):
-                from core.pdf_generator import PDFGenerator
-                self.pdf_generator = PDFGenerator()
-            
-            # Reset exit flag when entering Content Mode
-            self._content_mode_exiting = False
-            
-            # Request window creation from main UI thread via signal
-            if self.window and hasattr(self.window, 'content_mode_requested'):
-                # Emit signal to create window in main thread
-                self.window.content_mode_requested.emit(self)
-                logger.info("📝 Content window creation requested via signal")
-            else:
-                logger.warning("⚠️ Cannot create content window: UI window not available or signal not connected")
-                return "Cannot open Content Mode window: UI not properly initialized"
-            
-            # Update brain state if brain is available
-            if hasattr(self, 'brain') and self.brain:
-                self.brain._change_state(NexaState.CONTENT_MODE)
-            
-            logger.info("📝 Entered Content Mode")
-            return "Content Mode activated. You can now edit text, refine content, and create PDFs."
-            
-        except ImportError as e:
-            error_msg = f"Content Mode components not available: {str(e)}"
-            logger.error(error_msg)
-            return f"Cannot enter Content Mode: Missing dependencies. {str(e)}"
-        except Exception as e:
-            error_msg = f"Error entering Content Mode: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+        """Enter Content Mode - Opens Content Box window for text editing and PDF generation."""
+        return self.content_mode_handler.enter_content_mode()
     
     def exit_content_mode(self) -> str:
-        """
-        Exit Content Mode - Closes Content Box window and returns to normal operation.
-        Uses Signal/Slot mechanism for thread-safe GUI operations.
-        
-        Returns:
-            str: Status message
-        """
-        try:
-            from core.brain import NexaState
-            
-            # Set exit flag FIRST (so Content Mode check returns False immediately)
-            self._content_mode_exiting = True
-            
-            # Update brain state back to IDLE
-            if hasattr(self, 'brain') and self.brain:
-                self.brain._change_state(NexaState.IDLE)
-            
-            # Close content window if it exists
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                logger.info(f"🚪 Emitting close_content_window_requested signal (window visible: {self.content_window.isVisible()})")
-                
-                # Emit signal - will be handled in main thread by connected slot
-                self.close_content_window_requested.emit()
-                logger.info("✅ Signal emitted, window will close in main thread")
-            else:
-                self._content_mode_exiting = False
-                logger.warning("⚠️ No content window to close")
-            
-            logger.info("🚪 Content Mode exit initiated")
-            return "Content Mode closed. Returning to normal operation."
-            
-        except Exception as e:
-            error_msg = f"Error exiting Content Mode: {str(e)}"
-            logger.error(error_msg)
-            self._content_mode_exiting = False
-            return error_msg
+        """Exit Content Mode - Closes Content Box window."""
+        return self.content_mode_handler.exit_content_mode()
     
     def refine_text(self, mode: str, text: Optional[str] = None) -> str:
-        """
-        Refine text content using AI.
-        
-        Args:
-            mode: Refinement mode (formal, shorter, grammar_only, improve, summarize, casual)
-            text: Optional text to refine (if None, uses content from Content Box window)
-            
-        Returns:
-            str: Refined text or error message
-        """
-        try:
-            # CRITICAL FIX: Get text from Content Box if not provided OR if empty string
-            # AI sometimes passes empty string "", we need to treat it same as None
-            if not text or not text.strip():
-                if hasattr(self, 'content_window') and self.content_window is not None:
-                    # Check content status before processing
-                    content_status = self.content_window.get_content_status()
-                    word_count = self.content_window.get_word_count()
-                    
-                    if content_status == "empty":
-                        return "The content editor is empty. Please paste or type your content first."
-                    elif content_status == "not_ready":
-                        min_words = self.content_window.MIN_WORDS
-                        return f"Content is too short. Please add more text (minimum {min_words} words, you have {word_count})."
-                    elif content_status == "exceeds_limit":
-                        max_words = self.content_window.MAX_WORDS
-                        return f"Content is too long ({word_count} words). Please shorten it to under {max_words} words before refining."
-                    
-                    text = self.content_window.get_text()
-                else:
-                    return "No text to refine. Please provide text or use Content Mode."
-            
-            # Final check after retrieval
-            if not text or not text.strip():
-                return "Cannot refine empty text."
-            
-            # Initialize text refiner if needed
-            if not hasattr(self, 'text_refiner'):
-                from core.text_refiner import TextRefiner
-                if hasattr(self, 'brain') and self.brain:
-                    self.text_refiner = TextRefiner(self.brain.llm_manager)
-                else:
-                    return "Text refiner not available"
-            
-            # Refine the text
-            logger.info(f"✨ Refining text with mode: {mode}")
-            refined_text, llm_mode = self.text_refiner.refine_text(text, mode)
-            
-            # Update Content Box window if it exists (skip validation for Nexa's output)
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_text(refined_text, skip_validation=True)
-                self.content_window.set_status(f"✓ Text refined using {llm_mode} model", 3000)
-            
-            logger.info(f"✅ Text refined successfully ({len(refined_text)} chars)")
-            return refined_text
-            
-        except ValueError as e:
-            error_msg = str(e)
-            logger.warning(f"⚠️ Invalid refinement request: {error_msg}")
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(error_msg, 5000, error=True)
-            return error_msg
-        except Exception as e:
-            error_msg = f"Error refining text: {str(e)}"
-            logger.error(error_msg)
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(error_msg, 5000, error=True)
-            return error_msg
+        """Refine text content using AI."""
+        return self.content_mode_handler.refine_text(mode, text)
     
     def create_pdf(self, pdf_format: str = "simple_text", filename: Optional[str] = None, 
                    text: Optional[str] = None, title: Optional[str] = None) -> str:
-        """
-        Create a PDF document from text content.
-        
-        Args:
-            pdf_format: PDF format (simple_text, with_bullets, formatted_paragraphs)
-            filename: Optional filename (auto-generated if None)
-            text: Optional text content (if None, uses content from Content Box window)
-            title: Optional document title
-            
-        Returns:
-            str: Success message with file path or error message
-        """
-        try:
-            # CRITICAL FIX: Get text from Content Box if not provided OR if empty string
-            # AI sometimes passes empty string "", we need to treat it same as None
-            if not text or not text.strip():
-                if hasattr(self, 'content_window') and self.content_window is not None:
-                    # Check content status before processing
-                    content_status = self.content_window.get_content_status()
-                    word_count = self.content_window.get_word_count()
-                    
-                    if content_status == "empty":
-                        return "The content editor is empty. Please paste or type your content first."
-                    elif content_status == "not_ready":
-                        min_words = self.content_window.MIN_WORDS
-                        return f"Content is too short to create a PDF. Please add more text (minimum {min_words} words, you have {word_count})."
-                    elif content_status == "exceeds_limit":
-                        max_words = self.content_window.MAX_WORDS
-                        return f"Content is too long ({word_count} words). Please shorten it to under {max_words} words before creating PDF."
-                    
-                    # Get HTML content to preserve formatting (Phase 14)
-                    text = self.content_window.get_html()
-                else:
-                    return "No text to export. Please provide text or use Content Mode."
-            
-            # Final check after retrieval
-            if not text or not text.strip():
-                return "Cannot create PDF from empty text."
-            
-            # Initialize PDF generator if needed
-            if not hasattr(self, 'pdf_generator'):
-                from core.pdf_generator import PDFGenerator
-                self.pdf_generator = PDFGenerator()
-            
-            # Prepare metadata for PDF header
-            metadata = {
-                'name': self.config.user_name if hasattr(self.config, 'user_name') else 'Student',
-                'id': getattr(self.config, 'student_id', None),
-                'course': getattr(self.config, 'course_name', None),
-                'date': None  # Auto-generate current date
-            }
-            
-            # Create the PDF
-            logger.info(f"📄 Creating PDF - Format: {pdf_format}, Filename: {filename or 'auto'}")
-            pdf_path, success = self.pdf_generator.create_pdf(
-                text=text,
-                filename=filename,
-                pdf_format=pdf_format,
-                title=title,
-                metadata=metadata
-            )
-            
-            if success:
-                # Update Content Box window status
-                if hasattr(self, 'content_window') and self.content_window is not None:
-                    self.content_window.set_status(f"✓ PDF created: {pdf_path.name}", 5000)
-                
-                # Open PDF folder
-                import subprocess
-                import platform
-                if platform.system() == "Windows":
-                    subprocess.Popen(f'explorer /select,"{pdf_path}"')
-                
-                logger.info(f"✅ PDF created successfully: {pdf_path}")
-                return f"PDF created successfully: {pdf_path.name}. Saved in {pdf_path.parent}"
-            else:
-                return "PDF creation failed."
-                
-        except ImportError as e:
-            error_msg = f"PDF generation not available: {str(e)}. Install with: pip install reportlab"
-            logger.error(error_msg)
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status("ReportLab not installed", 5000, error=True)
-            return error_msg
-        except ValueError as e:
-            error_msg = str(e)
-            logger.warning(f"⚠️ Invalid PDF request: {error_msg}")
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(error_msg, 5000, error=True)
-            return error_msg
-        except Exception as e:
-            error_msg = f"Error creating PDF: {str(e)}"
-            logger.error(error_msg)
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(error_msg, 5000, error=True)
-            return error_msg
+        """Create a PDF document from text content."""
+        return self.content_mode_handler.create_pdf(pdf_format, filename, text, title)
     
     def _on_content_window_closed(self):
         """Handle Content Box window close event."""
-        logger.info("🚪 Content Box window closed by user")
-        self.exit_content_mode()
+        self.content_mode_handler.on_content_window_closed()
     
     def _on_refine_requested(self, mode: str, text: str):
-        """
-        Handle refine request from Content Box window.
-        
-        Args:
-            mode: Refinement mode
-            text: Text to refine
-        """
-        try:
-            self.refine_text(mode, text)
-        except Exception as e:
-            logger.error(f"Error handling refine request: {e}")
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(f"Refinement failed: {str(e)}", 5000, error=True)
+        """Handle refine request from Content Box window."""
+        self.content_mode_handler.on_refine_requested(mode, text)
     
     def _on_pdf_requested(self, pdf_format: str, filename: str, text: str):
-        """
-        Handle PDF creation request from Content Box window.
-        
-        Args:
-            pdf_format: PDF format
-            filename: Filename
-            text: Text content
-        """
-        try:
-            self.create_pdf(pdf_format, filename, text)
-        except Exception as e:
-            logger.error(f"Error handling PDF request: {e}")
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                self.content_window.set_status(f"PDF creation failed: {str(e)}", 5000, error=True)
+        """Handle PDF creation request from Content Box window."""
+        self.content_mode_handler.on_pdf_requested(pdf_format, filename, text)
     
     def _on_content_ready(self, text: str):
-        """
-        Handle content ready signal from Content Box window.
-        User has clicked "Ready" button or said voice command to indicate content is ready.
-        
-        Args:
-            text: The content that's ready for processing
-        """
-        logger.info(f"✓ Content marked as ready by user ({len(text)} chars)")
-        
-        # Store that content is ready for next voice command
-        if hasattr(self, 'content_window') and self.content_window is not None:
-            self.content_window.set_status("✓ Ready - Now you can say refinement commands", 3000)
-        
-        # Optionally: Speak confirmation
-        if hasattr(self, 'brain') and self.brain:
-            try:
-                self.brain._speak_response("Content received. What would you like me to do with it?")
-            except Exception as e:
-                logger.debug(f"Could not speak confirmation: {e}")
+        """Handle content ready signal from Content Box window."""
+        self.content_mode_handler.on_content_ready(text)
     
     def mark_content_ready(self) -> str:
-        """
-        Voice command handler: Mark content as ready for processing.
-        User can say "I'm ready", "Done pasting", "Content ready", etc.
-        
-        Returns:
-            str: Confirmation message
-        """
-        try:
-            if hasattr(self, 'content_window') and self.content_window is not None:
-                text = self.content_window.get_text()
-                if text and text.strip():
-                    self._on_content_ready(text)
-                    return "Got it! Content is ready. You can now tell me what to do with it."
-                else:
-                    return "There's no content in the editor yet. Please paste or type your content first."
-            else:
-                return "Content Mode is not active. Please open Content Mode first."
-        except Exception as e:
-            error_msg = f"Error marking content ready: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+        """Voice command: Mark content as ready for processing."""
+        return self.content_mode_handler.mark_content_ready()
 
+    # ========================================================================
+    # PHASE 15 - FILE SHARING - Delegated to FileShareHandler
+    # ========================================================================
+    
+    def share_file(self, file_path: Optional[str] = None) -> str:
+        """Open Windows Share dialog with file attached."""
+        return self.file_share_handler.share_file(file_path)
+    
+    def share_to_whatsapp(self, file_path: Optional[str] = None) -> str:
+        """Share file via WhatsApp."""
+        return self.file_share_handler.share_to_whatsapp(file_path)
+    
+    def share_to_phone_nearby(self, file_path: Optional[str] = None) -> str:
+        """Share file to phone via Windows Nearby Share."""
+        return self.file_share_handler.share_to_phone_nearby(file_path)
+    
+    def share_via_phone_link(self, file_path: Optional[str] = None) -> str:
+        """Share file via Phone Link to paired device."""
+        return self.file_share_handler.share_via_phone_link(file_path)
+    
+    def upload_to_google_drive(self, file_path: Optional[str] = None, folder: str = "Nexa Shared") -> str:
+        """Upload file to Google Drive."""
+        return self.file_share_handler.upload_to_google_drive(file_path, folder)
+    
+    def copy_file_to_clipboard_action(self, file_path: Optional[str] = None) -> str:
+        """Copy file to clipboard for pasting."""
+        return self.file_share_handler.copy_file_to_clipboard_action(file_path)
+    
+    # ========================================================================
+    # APPLICATION CONTROL
+    # ========================================================================
+    
     def exit_nexa(self) -> str:
         """
         Exit/shutdown Nexa application gracefully.
@@ -2591,14 +1358,83 @@ class CommandExecutor(QObject):
             logger.error(error_msg)
             return error_msg
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 29: PROACTIVE ENGAGEMENT
+    # Handles user responses to proactive suggestions from the companion module
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def accept_proactive_suggestion(self) -> str:
+        """
+        User accepted a proactive suggestion.
+        
+        Returns:
+            str: Confirmation message
+        """
+        try:
+            from core.companion import get_proactive_engine, get_idle_monitor
+            
+            engine = get_proactive_engine()
+            idle_monitor = get_idle_monitor()
+            
+            if engine:
+                suggestion = engine.get_pending_suggestion()
+                if suggestion:
+                    engine.record_response(accepted=True)
+                    
+                    # Record in idle monitor too
+                    if idle_monitor:
+                        idle_monitor.record_proactive_response(accepted=True)
+                    
+                    logger.info("Proactive suggestion accepted: %s", suggestion.suggestion_type.value)
+                    return "Great! I'll keep that in mind."
+                else:
+                    return "No pending suggestion to accept."
+            else:
+                return "Proactive system not active."
+                
+        except Exception as e:
+            logger.error(f"Error accepting proactive: {e}")
+            return "Got it!"
+    
+    def decline_proactive_suggestion(self) -> str:
+        """
+        User declined a proactive suggestion.
+        
+        Returns:
+            str: Acknowledgment message
+        """
+        try:
+            from core.companion import get_proactive_engine, get_idle_monitor
+            
+            engine = get_proactive_engine()
+            idle_monitor = get_idle_monitor()
+            
+            if engine:
+                suggestion = engine.get_pending_suggestion()
+                if suggestion:
+                    engine.record_response(accepted=False)
+                    
+                    # Record in idle monitor too
+                    if idle_monitor:
+                        idle_monitor.record_proactive_response(accepted=False)
+                    
+                    logger.info("Proactive suggestion declined: %s", suggestion.suggestion_type.value)
+                    return "No problem, I'll be here if you need me."
+                else:
+                    return "Okay."
+            else:
+                return "Okay."
+                
+        except Exception as e:
+            logger.error(f"Error declining proactive: {e}")
+            return "Okay."
 
-
-
-
-
-
-
-
-
-
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 16: SYSTEM POWER CONTROL, POWER PLANS, BLUETOOTH
+    # → MOVED TO: core/system_control.py (December 2024)
+    # Functions: lock_screen, system_sleep, hibernate, restart, shutdown,
+    #            schedule_shutdown, cancel_shutdown, get_power_plan, list_power_plans,
+    #            set_power_plan, get_bluetooth_status, list_bluetooth_devices,
+    #            open_bluetooth_settings
+    # ═══════════════════════════════════════════════════════════════════════════
 

@@ -1,0 +1,5 @@
+$816f727f-a883-4fa8-ba0b-9a1b041933cf²§id ÿÿÿÿÿÿÿÿÿ*string08fact ÿÿÿÿÿÿÿÿÿ*string08#category ÿÿÿÿÿÿÿÿÿ*string084vector ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:38408!source ÿÿÿÿÿÿÿÿÿ*string08$
+confidence ÿÿÿÿÿÿÿÿÿ*float08%
+created_at ÿÿÿÿÿÿÿÿÿ*string08(last_accessed ÿÿÿÿÿÿÿÿÿ*string08&access_count ÿÿÿÿÿÿÿÿÿ*int3208"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

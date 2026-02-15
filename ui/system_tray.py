@@ -100,26 +100,26 @@ class NexaSystemTray(QSystemTrayIcon):
         menu.addSeparator()
         
         # Pause/Resume listening
-        self.pause_action = QAction("⏸️ Pause Listening", self)
+        self.pause_action = QAction("Pause Listening", self)
         self.pause_action.triggered.connect(self._toggle_listening)
         menu.addAction(self.pause_action)
         
         # Online/Offline toggle
-        self.mode_action = QAction("🌐 Switch to Offline", self)
+        self.mode_action = QAction("Switch to Offline", self)
         self.mode_action.triggered.connect(self._toggle_mode)
         menu.addAction(self.mode_action)
         
         menu.addSeparator()
         
         # Clear history
-        clear_action = QAction("🧹 Clear History", self)
+        clear_action = QAction("Clear History", self)
         clear_action.triggered.connect(self._clear_history)
         menu.addAction(clear_action)
         
         menu.addSeparator()
         
         # Exit
-        exit_action = QAction("❌ Exit Nexa", self)
+        exit_action = QAction("Exit Nexa", self)
         exit_action.triggered.connect(self._exit_application)
         menu.addAction(exit_action)
         
@@ -165,7 +165,7 @@ class NexaSystemTray(QSystemTrayIcon):
             if hasattr(brain, 'listener') and brain.listener:
                 if brain.listener.is_listening:
                     brain.listener.stop_listening()
-                    self.pause_action.setText("▶️ Resume Listening")
+                    self.pause_action.setText("Resume Listening")
                     self.showMessage(
                         "Listening Paused",
                         "Nexa will not respond to voice commands.",
@@ -174,7 +174,7 @@ class NexaSystemTray(QSystemTrayIcon):
                     )
                 else:
                     brain.listener.start_listening()
-                    self.pause_action.setText("⏸️ Pause Listening")
+                    self.pause_action.setText("Pause Listening")
                     self.showMessage(
                         "Listening Resumed",
                         "Nexa is now listening for commands.",
@@ -192,7 +192,7 @@ class NexaSystemTray(QSystemTrayIcon):
                 
                 if current_mode == "online":
                     brain.llm_manager.switch_to_offline()
-                    self.mode_action.setText("🌐 Switch to Online")
+                    self.mode_action.setText("Switch to Online")
                     self.showMessage(
                         "Offline Mode",
                         "Using local Llama3 model.",
@@ -201,7 +201,7 @@ class NexaSystemTray(QSystemTrayIcon):
                     )
                 else:
                     brain.llm_manager.switch_to_online()
-                    self.mode_action.setText("💻 Switch to Offline")
+                    self.mode_action.setText("Switch to Offline")
                     self.showMessage(
                         "Online Mode",
                         "Using Llama 3.1 AI.",

@@ -40,12 +40,15 @@ data/user_prefs.json
 data/logs/
 data/weather_cache/
 data/speaker_profiles/
-models/whisper/*.bin
+models/
 voice/piper_models/*.onnx
 voice/piper_models/*.json
 voice/kokoro_models/*.onnx
 voice/kokoro_models/*.bin
 config/ui_preferences.json
+config/setup_complete.marker
+music_player_required_icons/
+other_icons/
 
 # Build outputs
 Output/
