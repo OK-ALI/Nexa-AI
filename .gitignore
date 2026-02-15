@@ -35,11 +35,7 @@ wheels/
 *~
 
 # Nexa specific
-data/memory.json
-data/user_prefs.json
-data/logs/
-data/weather_cache/
-data/speaker_profiles/
+data/
 models/
 voice/piper_models/*.onnx
 voice/piper_models/*.json
