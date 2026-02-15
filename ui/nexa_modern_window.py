@@ -9,14 +9,16 @@ Features:
 """
 
 import logging
+import json
 import random
+from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont, QMouseEvent, QColor
+from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve, QMimeData
+from PySide6.QtGui import QFont, QMouseEvent, QColor, QDrag
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 from core.brain import NexaBrain, NexaState
@@ -78,6 +80,7 @@ class NexaModernWindow(QMainWindow):
         
         # Frameless window for clean look
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAcceptDrops(True)  # Enable drag-and-drop for sidebar reordering
         
         # Dragging support
         self._drag_position = None
@@ -253,7 +256,7 @@ class NexaModernWindow(QMainWindow):
         return controls
     
     def _create_sidebar(self) -> QWidget:
-        """Create vertical sidebar with feature toggle buttons under mode button."""
+        """Create vertical sidebar with drag-and-drop reorderable feature toggle buttons."""
         sidebar = QWidget()
         sidebar.setObjectName("nexaSidebar")
         sidebar.setStyleSheet("background: transparent;")
@@ -266,45 +269,248 @@ class NexaModernWindow(QMainWindow):
         icon_size = 28  # larger icons for sidebar buttons
         btn_size = 42   # larger hit area
         
-        # Theme toggle button
-        self.theme_btn = QPushButton()
-        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, icon_size))
-        self.theme_btn.setIconSize(QSize(icon_size, icon_size))
-        self.theme_btn.setFixedSize(btn_size, btn_size)
-        self.theme_btn.setToolTip("Toggle theme (Dark/Light)")
-        self.theme_btn.clicked.connect(self._toggle_theme_manual)
-        layout.addWidget(self.theme_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        # Define all sidebar buttons with their IDs
+        self._sidebar_btn_defs = {
+            'theme': {
+                'icon': lambda: self._icon_mgr.get_theme_icon(self._is_dark_theme, icon_size),
+                'tooltip': "Toggle theme (Dark/Light)",
+                'callback': self._toggle_theme_manual,
+            },
+            'companion': {
+                'icon': lambda: self._icon_mgr.get_assistant_icon(icon_size),
+                'tooltip': "Toggle Companion",
+                'callback': self._toggle_pet,
+            },
+            'memory': {
+                'icon': lambda: self._icon_mgr.get_memory_icon(icon_size),
+                'tooltip': "Open Memory Panel",
+                'callback': self._toggle_memory_panel,
+            },
+            'music': {
+                'icon': lambda: self._icon_mgr.get_icon('music_dark', icon_size),
+                'tooltip': "Open Music Player",
+                'callback': self._toggle_music_player,
+            },
+        }
         
-        # Companion toggle button
-        self.pet_btn = QPushButton()
-        self.pet_btn.setIcon(self._icon_mgr.get_assistant_icon(icon_size))
-        self.pet_btn.setIconSize(QSize(icon_size, icon_size))
-        self.pet_btn.setFixedSize(btn_size, btn_size)
-        self.pet_btn.setToolTip("Toggle Companion")
-        self.pet_btn.clicked.connect(self._toggle_pet)
-        layout.addWidget(self.pet_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        # Load saved button order from preferences
+        button_order = self._load_sidebar_order()
         
-        # Memory Panel toggle button
-        self.memory_btn = QPushButton()
-        self.memory_btn.setIcon(self._icon_mgr.get_memory_icon(icon_size))
-        self.memory_btn.setIconSize(QSize(icon_size, icon_size))
-        self.memory_btn.setFixedSize(btn_size, btn_size)
-        self.memory_btn.setToolTip("Open Memory Panel")
-        self.memory_btn.clicked.connect(self._toggle_memory_panel)
-        layout.addWidget(self.memory_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        # Create buttons in saved order
+        self._sidebar_buttons = {}  # id -> QPushButton
+        self._sidebar_layout = layout
+        self._sidebar_widget = sidebar
+        self._sidebar_btn_size = btn_size
+        self._sidebar_icon_size = icon_size
+        self._drag_source = None
+        self._drag_start_pos = None
         
-        # Music player toggle button
-        self.music_btn = QPushButton()
-        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark', icon_size))
-        self.music_btn.setIconSize(QSize(icon_size, icon_size))
-        self.music_btn.setFixedSize(btn_size, btn_size)
-        self.music_btn.setToolTip("Open Music Player")
-        self.music_btn.clicked.connect(self._toggle_music_player)
-        layout.addWidget(self.music_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        for btn_id in button_order:
+            if btn_id not in self._sidebar_btn_defs:
+                continue
+            btn_def = self._sidebar_btn_defs[btn_id]
+            btn = QPushButton()
+            btn.setIcon(btn_def['icon']())
+            btn.setIconSize(QSize(icon_size, icon_size))
+            btn.setFixedSize(btn_size, btn_size)
+            btn.setToolTip(btn_def['tooltip'])
+            btn.clicked.connect(btn_def['callback'])
+            btn.setProperty("sidebar_id", btn_id)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            # Enable drag support
+            btn.installEventFilter(self)
+            
+            layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+            self._sidebar_buttons[btn_id] = btn
+        
+        # Store named references for theme updates
+        self.theme_btn = self._sidebar_buttons.get('theme')
+        self.pet_btn = self._sidebar_buttons.get('companion')
+        self.memory_btn = self._sidebar_buttons.get('memory')
+        self.music_btn = self._sidebar_buttons.get('music')
         
         layout.addStretch()
         
         return sidebar
+    
+    def _load_sidebar_order(self) -> list:
+        """Load sidebar button order from ui_preferences.json."""
+        default_order = ['theme', 'companion', 'memory', 'music']
+        try:
+            prefs_path = Path("config/ui_preferences.json")
+            if prefs_path.exists():
+                with open(prefs_path, 'r') as f:
+                    prefs = json.load(f)
+                saved = prefs.get('sidebar_order', None)
+                if saved and isinstance(saved, list):
+                    # Validate - make sure all buttons are present
+                    if set(saved) == set(default_order):
+                        return saved
+        except Exception as e:
+            logger.debug(f"Could not load sidebar order: {e}")
+        return default_order
+    
+    def _save_sidebar_order(self):
+        """Save current sidebar button order to ui_preferences.json."""
+        try:
+            prefs_path = Path("config/ui_preferences.json")
+            prefs = {}
+            if prefs_path.exists():
+                with open(prefs_path, 'r') as f:
+                    prefs = json.load(f)
+            
+            # Build order from layout
+            order = []
+            for i in range(self._sidebar_layout.count()):
+                item = self._sidebar_layout.itemAt(i)
+                if item and item.widget():
+                    btn_id = item.widget().property("sidebar_id")
+                    if btn_id:
+                        order.append(btn_id)
+            
+            prefs['sidebar_order'] = order
+            with open(prefs_path, 'w') as f:
+                json.dump(prefs, f, indent=2)
+            logger.debug(f"💾 Sidebar order saved: {order}")
+        except Exception as e:
+            logger.error(f"Failed to save sidebar order: {e}")
+    
+    def eventFilter(self, obj, event):
+        """Handle drag-and-drop reordering for sidebar buttons."""
+        from PySide6.QtCore import QEvent
+        
+        if not hasattr(self, '_sidebar_buttons'):
+            return super().eventFilter(obj, event)
+        
+        # Check if this is a sidebar button
+        btn_id = obj.property("sidebar_id") if hasattr(obj, 'property') else None
+        if not btn_id or btn_id not in self._sidebar_buttons:
+            return super().eventFilter(obj, event)
+        
+        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = event.pos()
+            self._drag_source = btn_id
+            return False  # Let click still work
+        
+        elif event.type() == QEvent.Type.MouseMove and self._drag_source:
+            if self._drag_start_pos is None:
+                return False
+            # Only start drag after moving enough distance
+            distance = (event.pos() - self._drag_start_pos).manhattanLength()
+            if distance < 15:
+                return False
+            
+            # Start visual drag
+            source_btn = self._sidebar_buttons[self._drag_source]
+            drag = QDrag(source_btn)
+            mime = QMimeData()
+            mime.setText(self._drag_source)
+            drag.setMimeData(mime)
+            
+            # Create drag pixmap from button icon
+            pixmap = source_btn.icon().pixmap(QSize(self._sidebar_btn_size, self._sidebar_btn_size))
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+            
+            drag.exec(Qt.DropAction.MoveAction)
+            self._drag_source = None
+            self._drag_start_pos = None
+            return True
+        
+        elif event.type() == QEvent.Type.MouseButtonRelease:
+            self._drag_source = None
+            self._drag_start_pos = None
+            return False
+        
+        return super().eventFilter(obj, event)
+    
+    def dragEnterEvent(self, event):
+        """Accept sidebar button drags."""
+        if event.mimeData().hasText():
+            btn_id = event.mimeData().text()
+            if hasattr(self, '_sidebar_buttons') and btn_id in self._sidebar_buttons:
+                event.acceptProposedAction()
+                return
+        super().dragEnterEvent(event)
+    
+    def dragMoveEvent(self, event):
+        """Accept drag move over sidebar area."""
+        if event.mimeData().hasText():
+            btn_id = event.mimeData().text()
+            if hasattr(self, '_sidebar_buttons') and btn_id in self._sidebar_buttons:
+                event.acceptProposedAction()
+                return
+        super().dragMoveEvent(event)
+    
+    def dropEvent(self, event):
+        """Handle drop to reorder sidebar buttons."""
+        if not event.mimeData().hasText():
+            super().dropEvent(event)
+            return
+        
+        source_id = event.mimeData().text()
+        if not hasattr(self, '_sidebar_buttons') or source_id not in self._sidebar_buttons:
+            super().dropEvent(event)
+            return
+        
+        # Find which button slot we're closest to
+        drop_pos = event.position().toPoint()
+        sidebar_pos = self._sidebar_widget.mapFrom(self, drop_pos)
+        
+        # Determine target index based on Y position
+        target_idx = 0
+        btn_count = len(self._sidebar_buttons)
+        for i in range(self._sidebar_layout.count()):
+            item = self._sidebar_layout.itemAt(i)
+            if item and item.widget() and item.widget().property("sidebar_id"):
+                widget_center = item.widget().y() + item.widget().height() // 2
+                if sidebar_pos.y() > widget_center:
+                    target_idx = min(i + 1, btn_count - 1)
+        
+        # Get current order
+        current_order = []
+        for i in range(self._sidebar_layout.count()):
+            item = self._sidebar_layout.itemAt(i)
+            if item and item.widget():
+                bid = item.widget().property("sidebar_id")
+                if bid:
+                    current_order.append(bid)
+        
+        if source_id not in current_order:
+            return
+        
+        # Remove source and insert at target
+        old_idx = current_order.index(source_id)
+        current_order.pop(old_idx)
+        if target_idx > old_idx:
+            target_idx = min(target_idx - 1, len(current_order))
+        target_idx = max(0, min(target_idx, len(current_order)))
+        current_order.insert(target_idx, source_id)
+        
+        # Rebuild sidebar layout with new order
+        self._rebuild_sidebar(current_order)
+        
+        event.acceptProposedAction()
+        logger.info(f"🔀 Sidebar reordered: {current_order}")
+    
+    def _rebuild_sidebar(self, order: list):
+        """Rebuild sidebar buttons in the given order."""
+        # Remove all widgets from layout (but don't delete them)
+        while self._sidebar_layout.count():
+            item = self._sidebar_layout.takeAt(0)
+            # Don't delete - we reuse buttons
+        
+        # Re-add buttons in new order
+        for btn_id in order:
+            if btn_id in self._sidebar_buttons:
+                btn = self._sidebar_buttons[btn_id]
+                self._sidebar_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        self._sidebar_layout.addStretch()
+        
+        # Save new order
+        self._save_sidebar_order()
     
     def _create_title_section(self) -> QWidget:
         """Create NEXA title and AI ASSISTANT subtitle with static glow."""
@@ -1465,9 +1671,9 @@ class NexaModernWindow(QMainWindow):
                         popup.song_title.setText(f"📚 {song_count} songs in library")
                         popup.artist_label.setText("Click ▶ to play random")
                 
-                # Show popup near the music button
+                # Show popup to the right of the music button (vertical sidebar)
                 global_pos = self.music_btn.mapToGlobal(
-                    QPoint(self.music_btn.width() // 2, self.music_btn.height())
+                    QPoint(self.music_btn.width(), self.music_btn.height() // 2)
                 )
                 popup.show_at(global_pos)
                 logger.info("🎵 Music player shown")

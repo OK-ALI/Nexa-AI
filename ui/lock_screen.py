@@ -14,8 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import (
-    QFont, QColor, QPainter, QLinearGradient, QImage,
-    QPixmap, QPainterPath
+    QFont, QColor, QPainter, QLinearGradient
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +24,7 @@ class LockScreen(QWidget):
     """
     Full-window overlay lock screen.
     Blocks all interaction and shows password prompt to unlock.
+    Uses a frosted dark gradient overlay (no screenshot) for clean look.
     """
 
     unlocked = Signal()  # Emitted when user successfully unlocks
@@ -37,8 +37,6 @@ class LockScreen(QWidget):
         self.setWindowFlags(Qt.WindowType.Widget)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        # Blur background
-        self._blur_pixmap = None  # Frozen blurred snapshot of parent
         self._overlay_opacity = 1.0  # For unlock fade-out
 
         self._setup_ui()
@@ -179,33 +177,35 @@ class LockScreen(QWidget):
         main_layout.addWidget(center)
 
     def paintEvent(self, event):
-        """Draw frosted-glass blur background with dark overlay."""
+        """Draw frosted dark gradient overlay (no screenshot to avoid double-orb artifacts)."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Draw blurred snapshot if available
-        if self._blur_pixmap:
-            painter.drawPixmap(0, 0, self._blur_pixmap.scaled(
-                self.size(), Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            ))
-
-        # Dark tinted overlay on top of blur
+        # Solid frosted dark gradient — fully opaque to hide content behind
         gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0.0, QColor(10, 15, 25, 190))
-        gradient.setColorAt(1.0, QColor(5, 10, 18, 210))
+        gradient.setColorAt(0.0, QColor(8, 12, 22, 245))
+        gradient.setColorAt(0.3, QColor(12, 18, 32, 240))
+        gradient.setColorAt(0.7, QColor(10, 15, 28, 242))
+        gradient.setColorAt(1.0, QColor(5, 10, 18, 248))
         painter.fillRect(self.rect(), gradient)
+
+        # Subtle radial glow accent at center-top for depth
+        center_x = self.width() // 2
+        from PySide6.QtGui import QRadialGradient
+        radial = QRadialGradient(center_x, self.height() * 0.35, self.width() * 0.4)
+        radial.setColorAt(0.0, QColor(0, 160, 220, 18))
+        radial.setColorAt(0.5, QColor(0, 100, 180, 8))
+        radial.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.fillRect(self.rect(), radial)
+
         painter.end()
 
     def activate(self):
-        """Show the lock screen with frosted-glass blur and lock the session."""
+        """Show the lock screen with frosted gradient overlay and lock the session."""
         self.auth_manager.lock()
         self.user_label.setText(f"User: {self.auth_manager.current_user or 'Unknown'}")
         self.password_input.clear()
         self.error_label.setText("")
-
-        # Capture blurred snapshot of parent before overlaying
-        self._capture_blur_background()
 
         # Resize to cover parent
         if self.parent():
@@ -218,7 +218,7 @@ class LockScreen(QWidget):
         self.show()
         self.raise_()
         self.password_input.setFocus()
-        logger.info("Lock screen activated with blur background")
+        logger.info("Lock screen activated")
 
     def _do_unlock(self):
         """Attempt to unlock with smooth blur-clear transition."""
@@ -256,62 +256,8 @@ class LockScreen(QWidget):
         """Called when fade-out animation finishes."""
         self.hide()
         self.setGraphicsEffect(None)  # Remove opacity effect for next show
-        self._blur_pixmap = None  # Free memory
         self.unlocked.emit()
         logger.info("Lock screen dismissed - session unlocked")
-
-    def _capture_blur_background(self):
-        """Capture and blur the parent window content as background."""
-        try:
-            parent = self.parent()
-            if not parent:
-                self._blur_pixmap = None
-                return
-
-            # Grab the parent widget content as a pixmap
-            pixmap = parent.grab()
-
-            # Convert to QImage for blur processing
-            img = pixmap.toImage()
-
-            # Apply box blur (fast approximation of Gaussian blur)
-            img = self._apply_blur(img, radius=20)
-
-            self._blur_pixmap = QPixmap.fromImage(img)
-            logger.debug("Captured and blurred parent background")
-
-        except Exception as e:
-            logger.warning(f"Failed to capture blur background: {e}")
-            self._blur_pixmap = None
-
-    @staticmethod
-    def _apply_blur(image: QImage, radius: int = 20) -> QImage:
-        """
-        Apply a fast box blur to a QImage.
-        Uses a two-pass horizontal+vertical box blur for performance.
-        Multiple passes approximate a Gaussian blur.
-        """
-        from PySide6.QtCore import QRect
-
-        # Scale down → blur → scale up for efficient, strong blur
-        w, h = image.width(), image.height()
-        scale_factor = 0.15  # Scale to 15% — large blur effect
-
-        small = image.scaled(
-            max(1, int(w * scale_factor)),
-            max(1, int(h * scale_factor)),
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-
-        # Scale back up (the bilinear interpolation creates the blur)
-        blurred = small.scaled(
-            w, h,
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-
-        return blurred
 
     def _toggle_password_visibility(self):
         """Toggle between showing and hiding the password."""

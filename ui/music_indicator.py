@@ -729,12 +729,12 @@ class MusicPlayerPopup(QFrame):
         self.repeat_clicked.emit()
     
     def show_at(self, pos: QPoint):
-        """Show popup BELOW the button (fixed positioning)"""
-        # Position popup below the button with some offset
-        adjusted_pos = QPoint(pos.x() - self.width() // 2, pos.y() + 10)
+        """Show popup to the RIGHT of the button (for vertical sidebar)"""
+        # Position popup to the right of the button with some offset
+        adjusted_pos = QPoint(pos.x() + 10, pos.y() - self.height() // 2)
         self.move(adjusted_pos)
         self.show()
-        logger.info("🎵 Music player popup shown below button")
+        logger.info("🎵 Music player popup shown to the right of button")
     
     def hideEvent(self, event):
         """Handle hide event"""
