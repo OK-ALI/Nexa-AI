@@ -161,7 +161,10 @@ class PetIdleManager(QObject):
             logger.info("🌅 Pet waking up!")
             
             # After stretch, return to idle
-            self.return_timer.timeout.disconnect() if self.return_timer.receivers(self.return_timer.timeout) > 0 else None
+            try:
+                self.return_timer.timeout.disconnect()
+            except (RuntimeError, TypeError):
+                pass
             self.return_timer.timeout.connect(lambda: self.personality.set_state('idle'))
             self.return_timer.start(self.STRETCH_DURATION_MS)
         
@@ -205,7 +208,7 @@ class PetIdleManager(QObject):
         self.return_timer.stop()
         try:
             self.return_timer.timeout.disconnect()
-        except RuntimeError:
+        except (RuntimeError, TypeError):
             pass
         self.return_timer.timeout.connect(lambda: self.personality.set_state('idle'))
         self.return_timer.start(self.CURIOUS_DURATION_MS)
@@ -240,7 +243,7 @@ class PetIdleManager(QObject):
         self.return_timer.stop()
         try:
             self.return_timer.timeout.disconnect()
-        except RuntimeError:
+        except (RuntimeError, TypeError):
             pass
         self.return_timer.timeout.connect(lambda: self.personality.set_state('idle'))
         self.return_timer.start(self.YAWN_DURATION_MS)

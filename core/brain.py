@@ -930,7 +930,7 @@ class NexaBrain:
                 logger.info("🔔 Wake word detected - Nexa is listening...")
                 
                 # First, set state to LISTENING so pet updates
-                self._set_state(NexaState.LISTENING)
+                self._change_state(NexaState.LISTENING)
                 
                 # Play a quick TTS acknowledgment to let user know Nexa heard them
                 try:
@@ -3464,6 +3464,25 @@ User request: {user_text}"""
                     logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value}")
             else:
                 logger.info(f"🔄 STATE: {old_icon} {old_state.value} → {new_icon} {new_state.value}")
+            
+            # Music ducking based on state transitions
+            # Duck when user is speaking (LISTENING) or NEXA is active (THINKING/SPEAKING/EXECUTING)
+            # Unduck when returning to IDLE
+            try:
+                music_mgr = getattr(self.executor, 'music_manager', None) if hasattr(self, 'executor') else None
+                if music_mgr:
+                    active_states = (NexaState.LISTENING, NexaState.RECOGNIZING,
+                                     NexaState.THINKING, NexaState.SPEAKING, NexaState.EXECUTING)
+                    if new_state in active_states:
+                        if not music_mgr.is_ducking_active():
+                            music_mgr.enable_ducking()
+                            logger.debug(f"🔉 Music ducked for state: {new_state.value}")
+                    elif new_state == NexaState.IDLE:
+                        if music_mgr.is_ducking_active():
+                            music_mgr.disable_ducking()
+                            logger.debug(f"🔊 Music restored for IDLE state")
+            except Exception as duck_err:
+                logger.debug(f"Music ducking state change error: {duck_err}")
             
             # Notify callbacks
             for callback in self.state_callbacks:

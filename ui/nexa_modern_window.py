@@ -151,20 +151,41 @@ class NexaModernWindow(QMainWindow):
         controls = self._create_window_controls()
         main_layout.addWidget(controls)
         
+        # --- Content area (sidebar + main content) ---
+        content_area = QWidget()
+        content_area.setStyleSheet("background: transparent;")
+        content_layout = QHBoxLayout(content_area)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        
+        # Left sidebar with feature toggle buttons
+        sidebar = self._create_sidebar()
+        content_layout.addWidget(sidebar)
+        
+        # Main content (title + orb + status)
+        main_content = QWidget()
+        main_content.setStyleSheet("background: transparent;")
+        main_content_layout = QVBoxLayout(main_content)
+        main_content_layout.setContentsMargins(0, 0, 0, 0)
+        main_content_layout.setSpacing(0)
+        
         # --- Title section ---
         title_section = self._create_title_section()
-        main_layout.addWidget(title_section)
+        main_content_layout.addWidget(title_section)
         
         # --- Orb visualization (center) ---
         orb_section = self._create_orb_section()
-        main_layout.addWidget(orb_section, 1)  # Takes most space
+        main_content_layout.addWidget(orb_section, 1)  # Takes most space
         
         # --- Status bar (bottom) ---
         status_section = self._create_status_section()
-        main_layout.addWidget(status_section)
+        main_content_layout.addWidget(status_section)
         
         # Spacer at bottom
-        main_layout.addSpacing(20)
+        main_content_layout.addSpacing(20)
+        
+        content_layout.addWidget(main_content, 1)
+        main_layout.addWidget(content_area, 1)
     
     def _create_window_controls(self) -> QWidget:
         """Create minimize/maximize/close buttons."""
@@ -187,42 +208,6 @@ class NexaModernWindow(QMainWindow):
         self.mode_btn.setFixedSize(120, 30)
         self.mode_btn.clicked.connect(self._toggle_mode)
         layout.addWidget(self.mode_btn)
-        
-        # Theme toggle button - with PNG icon
-        self.theme_btn = QPushButton()
-        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
-        self.theme_btn.setIconSize(QSize(22, 22))
-        self.theme_btn.setFixedSize(35, 30)
-        self.theme_btn.setToolTip("Toggle theme (Dark/Light)")
-        self.theme_btn.clicked.connect(self._toggle_theme_manual)
-        layout.addWidget(self.theme_btn)
-        
-        # Companion toggle button - with PNG icon
-        self.pet_btn = QPushButton()
-        self.pet_btn.setIcon(self._icon_mgr.get_assistant_icon(22))
-        self.pet_btn.setIconSize(QSize(22, 22))
-        self.pet_btn.setFixedSize(35, 30)
-        self.pet_btn.setToolTip("Toggle Companion")
-        self.pet_btn.clicked.connect(self._toggle_pet)
-        layout.addWidget(self.pet_btn)
-        
-        # Memory Panel toggle button - with PNG icon
-        self.memory_btn = QPushButton()
-        self.memory_btn.setIcon(self._icon_mgr.get_memory_icon(22))
-        self.memory_btn.setIconSize(QSize(22, 22))
-        self.memory_btn.setFixedSize(35, 30)
-        self.memory_btn.setToolTip("Open Memory Panel")
-        self.memory_btn.clicked.connect(self._toggle_memory_panel)
-        layout.addWidget(self.memory_btn)
-        
-        # Music player toggle button - with PNG icon
-        self.music_btn = QPushButton()
-        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark', 22))
-        self.music_btn.setIconSize(QSize(22, 22))
-        self.music_btn.setFixedSize(35, 30)
-        self.music_btn.setToolTip("Open Music Player")
-        self.music_btn.clicked.connect(self._toggle_music_player)
-        layout.addWidget(self.music_btn)
         
         # Music indicator (hidden by default, shows when music plays)
         self.music_indicator = MusicIndicatorWidget()
@@ -266,6 +251,60 @@ class NexaModernWindow(QMainWindow):
         layout.addWidget(self.shutdown_btn)
         
         return controls
+    
+    def _create_sidebar(self) -> QWidget:
+        """Create vertical sidebar with feature toggle buttons under mode button."""
+        sidebar = QWidget()
+        sidebar.setObjectName("nexaSidebar")
+        sidebar.setStyleSheet("background: transparent;")
+        sidebar.setFixedWidth(58)
+        
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(8, 10, 4, 10)
+        layout.setSpacing(8)
+        
+        icon_size = 28  # larger icons for sidebar buttons
+        btn_size = 42   # larger hit area
+        
+        # Theme toggle button
+        self.theme_btn = QPushButton()
+        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, icon_size))
+        self.theme_btn.setIconSize(QSize(icon_size, icon_size))
+        self.theme_btn.setFixedSize(btn_size, btn_size)
+        self.theme_btn.setToolTip("Toggle theme (Dark/Light)")
+        self.theme_btn.clicked.connect(self._toggle_theme_manual)
+        layout.addWidget(self.theme_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Companion toggle button
+        self.pet_btn = QPushButton()
+        self.pet_btn.setIcon(self._icon_mgr.get_assistant_icon(icon_size))
+        self.pet_btn.setIconSize(QSize(icon_size, icon_size))
+        self.pet_btn.setFixedSize(btn_size, btn_size)
+        self.pet_btn.setToolTip("Toggle Companion")
+        self.pet_btn.clicked.connect(self._toggle_pet)
+        layout.addWidget(self.pet_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Memory Panel toggle button
+        self.memory_btn = QPushButton()
+        self.memory_btn.setIcon(self._icon_mgr.get_memory_icon(icon_size))
+        self.memory_btn.setIconSize(QSize(icon_size, icon_size))
+        self.memory_btn.setFixedSize(btn_size, btn_size)
+        self.memory_btn.setToolTip("Open Memory Panel")
+        self.memory_btn.clicked.connect(self._toggle_memory_panel)
+        layout.addWidget(self.memory_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Music player toggle button
+        self.music_btn = QPushButton()
+        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark', icon_size))
+        self.music_btn.setIconSize(QSize(icon_size, icon_size))
+        self.music_btn.setFixedSize(btn_size, btn_size)
+        self.music_btn.setToolTip("Open Music Player")
+        self.music_btn.clicked.connect(self._toggle_music_player)
+        layout.addWidget(self.music_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addStretch()
+        
+        return sidebar
     
     def _create_title_section(self) -> QWidget:
         """Create NEXA title and AI ASSISTANT subtitle with static glow."""
@@ -1026,9 +1065,9 @@ class NexaModernWindow(QMainWindow):
         new_theme = self.theme_manager.toggle_theme()
         self._is_dark_theme = new_theme == 'dark'
         # Update theme button icon
-        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
+        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 28))
         # Update music button icon for theme
-        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 22))
+        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 28))
         if hasattr(self, 'orb_widget'):
             self.orb_widget.update()  # Force orb repaint
         logger.info(f"🎨 Theme toggled manually: {new_theme}")
@@ -1044,9 +1083,9 @@ class NexaModernWindow(QMainWindow):
             self.theme_manager.set_theme(theme_name)
             self._is_dark_theme = theme_name == 'dark'
             # Update theme button icon
-            self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 22))
+            self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 28))
             # Update music button icon for theme
-            self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 22))
+            self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 28))
             if hasattr(self, 'orb_widget'):
                 self.orb_widget.update()  # Force orb repaint
             logger.info(f"🎤 Theme switched via voice: {theme_name}")
@@ -1070,20 +1109,23 @@ class NexaModernWindow(QMainWindow):
             }}
         """)
         
-        # Theme toggle button
-        self.theme_btn.setStyleSheet(f"""
+        # Sidebar feature toggle buttons (theme, companion, memory, music)
+        sidebar_btn_style = f"""
             QPushButton {{
                 background: {tm.get_color('buttons', 'background')};
                 color: {tm.get_color('buttons', 'text')};
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
+                border: 1px solid {panel_border};
+                border-radius: 10px;
             }}
             QPushButton:hover {{
                 background: {tm.get_color('buttons', 'background_hover')};
+                border: 1px solid {tm.get_color('panels', 'border_accent', default='rgba(0, 212, 255, 0.3)')};
             }}
-        """)
+        """
+        self.theme_btn.setStyleSheet(sidebar_btn_style)
+        self.pet_btn.setStyleSheet(sidebar_btn_style)
+        self.memory_btn.setStyleSheet(sidebar_btn_style)
+        self.music_btn.setStyleSheet(sidebar_btn_style)
         
         # Window control buttons
         window_btn_style = f"""
