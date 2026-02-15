@@ -120,7 +120,7 @@ User data writes to `%LOCALAPPDATA%\Nexa AI` (UAC-safe).
 ## UI Architecture (`ui/`)
 
 - `nexa_modern_window.py` - Main window, voice orb visualization
-- `nexa_pet_widget.py` - Desktop pet with 8 states (idle, listening, thinking, speaking, etc.)
+- `nexa_pet_widget.py` - Desktop Companion (Nexa Companion) with 8 states (idle, listening, thinking, speaking, etc.)
 - All UI inherits from PySide6 (Qt6) - use signals for cross-thread communication
 
 ## Project-Specific Notes

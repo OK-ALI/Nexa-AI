@@ -3,7 +3,7 @@
 **Project Completion:** 64.52% (20/31 Phases)  
 **Last Updated:** February 15, 2026  
 **Status:** Phase 17 COMPLETE ✅ - Modern Web-Tech Particle Orb UI  
-**Priority Track:** 🐾 Nexa Pet UI Phase P3 - ✅ COMPLETED (Live2D Integration)  
+**Priority Track:** 🐾 Nexa Companion UI Phase P3 - ✅ COMPLETED (Live2D Integration)  
 **LATEST:** 🔐 Login System, Breathing Glow Title, Sir/Boss Addressing  
 **NOW:** 💜 Companion Mode Phase 30 - Emotional Intelligence  
 **COMPLETED:** 🎨 Phase 17 + Phase 20 (Smart Memory) ✅
@@ -16,19 +16,19 @@
 |--------|--------|------------|
 | ✅ Completed | 20 | 64.52% |
 | 🚧 In Progress | 1 (Phase 30) | 3.23% |
-| 🐾 Priority Track | P1-P7 ✅, P8 ⏸️ | Pet UI Complete |
+| 🐾 Priority Track | P1-P7 ✅, P8 ⏸️ | Companion UI Complete |
 | 💜 Companion Mode | 28-29 ✅, 30-31 🚧 | HIGH PRIORITY |
 | 🎨 Phase 17 | ✅ COMPLETED | Particle Orb UI |
 | 🧠 Phase 20 | ✅ COMPLETED | Smart Memory (LanceDB) |
 | 🔐 Bonus Features | Login, Glow, Sir/Boss | Completed Feb 2026 |
 | ⏸️ Paused | 2 | 6.45% |
 | 📋 Planned | 8 | 25.81% |
-| **TOTAL** | **31 + Pet Track** | **100%** |
+| **TOTAL** | **31 + Companion Track** | **100%** |
 
 
 ---
 
-## 🐾 PRIORITY TRACK: Nexa Interactive Pet UI (Desktop Companion)
+## 🐾 PRIORITY TRACK: Nexa Interactive Companion UI (Desktop Companion)
 
 > **✅ COMPLETED - P1 through P7**  
 > **⏸️ P8 ON HOLD** - Waiting for additional features before final integration  
@@ -36,9 +36,9 @@
 
 ### Overview
 
-Transform Nexa from a traditional window UI into an **animated female AI pet character** that lives on your desktop - similar to ASUS ROG Omni but with full AI conversation capabilities.
+Transform Nexa from a traditional window UI into an **animated female AI companion character** that lives on your desktop - similar to ASUS ROG Omni but with full AI conversation capabilities.
 
-### Pet UI Status: 87.5% Complete (7/8 Phases)
+### Companion UI Status: 87.5% Complete (7/8 Phases)
 
 | Phase | Name | Status | Completion Date |
 |-------|------|--------|-----------------|
@@ -51,7 +51,7 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 | P7 | Personality & Idle Behaviors | ✅ | Dec 28, 2025 |
 | P8 | Integration & Polish | ⏸️ | On Hold |
 
-**Why P8 is on hold:** Waiting for additional features (Modern Web UI, Companion Mode intelligence) to integrate into the final pet experience.
+**Why P8 is on hold:** Waiting for additional features (Modern Web UI, Companion Mode intelligence) to integrate into the final companion experience.
 
 ### Design Vision
 
@@ -66,7 +66,7 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 
 ---
 
-### 🐾 Pet Phase P1: Foundation & Window System
+### 🐾 Companion Phase P1: Foundation & Window System
 **Status:** ✅ COMPLETED  
 **Completion Date:** December 18, 2025  
 **Actual Time:** 12 hours  
@@ -76,14 +76,14 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 
 #### Features Implemented:
 - ✅ Transparent frameless always-on-top window
-- ✅ Draggable pet (left-click and drag anywhere)
+- ✅ Draggable companion (left-click and drag anywhere)
 - ✅ Snap to screen edges (magnetic docking)
 - ✅ Right-click context menu (size options)
-- ✅ Pet size options (Small: 250x350, Medium: 350x500, Large: 450x650)
+- ✅ Companion size options (Small: 250x350, Medium: 350x500, Large: 450x650)
 - ✅ Save/restore position on restart
 - ✅ State-based expressions (7 states: idle, listening, thinking, speaking, sleeping, happy, error)
 - ✅ Integration with NexaBrain state system
-- ✅ Toggle pet visibility from main window (🐾 button)
+- ✅ Toggle companion visibility from main window (🐾 button)
 - ✅ Proper alpha channel transparency (no background artifacts)
 
 #### Technical Details:
@@ -93,8 +93,8 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 - **Position Storage:** `config/pet_preferences.json`
 
 #### Files Created:
-- ✅ `ui/nexa_pet_widget.py` - Main pet window (363 lines)
-- ✅ `ui/pet_config.py` - Pet settings and preferences (210 lines)
+- ✅ `ui/nexa_pet_widget.py` - Main companion window (363 lines)
+- ✅ `ui/pet_config.py` - Companion settings and preferences (210 lines)
 - ✅ `config/pet_preferences.json` - Position, size, settings storage (auto-generated)
 - ✅ `assets/pet/` - 7 state images (idle.png, listening.png, thinking.png, speaking.png, sleeping.png, happy.png, error.png)
 
@@ -113,7 +113,7 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 
 ---
 
-### 🐾 Pet Phase P2: Character Design & Static Assets
+### 🐾 Companion Phase P2: Character Design & Static Assets
 **Status:** ✅ COMPLETED  
 **Completion Date:** December 18, 2025  
 **Actual Time:** 2 hours (asset creation external)  
@@ -153,11 +153,11 @@ Transform Nexa from a traditional window UI into an **animated female AI pet cha
 - **Resolution:** 2816x1536 (high quality, scales down smoothly)
 - **Style:** Chibi anime aesthetic matching af_heart voice personality
 - **Design:** Consistent character across all expressions with state-specific features
-- **Integration:** Already working in Pet P1 with proper scaling and transparency
+- **Integration:** Already working in Companion P1 with proper scaling and transparency
 
 ---
 
-### 🐾 Pet Phase P3: Live2D Animation System
+### 🐾 Companion Phase P3: Live2D Animation System
 **Status:** ✅ COMPLETED  
 **Completion Date:** December 18, 2025  
 **Actual Time:** 8 hours  
@@ -206,12 +206,12 @@ pip install live2d-py  # v0.6.0.1
 
 ---
 
-### 🎨 Sprite Pet System (DEFAULT - December 2025)
+### 🎨 Sprite Companion System (DEFAULT - December 2025)
 
 **Status:** ✅ Complete  
 **Rendering Mode:** Animated PNG Sprites with programmatic effects
 
-The sprite pet uses **custom Nexa character images** with smooth animations:
+The sprite companion uses **custom Nexa character images** with smooth animations:
 
 #### Sprite Animation Features:
 | Feature | Description |
@@ -247,7 +247,7 @@ The sprite pet uses **custom Nexa character images** with smooth animations:
   - Floating, breathing, bounce effects
   - Crossfade state transitions
   - Draggable transparent window
-- ✅ `ui/pet_config.py` - Pet configuration (~265 lines)
+- ✅ `ui/pet_config.py` - Companion configuration (~265 lines)
   - `PetType` enum (SPRITE/LIVE2D)
   - `PetSize` enum (SMALL/MEDIUM/LARGE)
   - Position persistence
@@ -255,7 +255,7 @@ The sprite pet uses **custom Nexa character images** with smooth animations:
 
 ---
 
-### 🎬 Live2D Pet System (ALTERNATIVE)
+### 🎬 Live2D Companion System (ALTERNATIVE)
 
 **Status:** ✅ Available (switch via config)  
 **Rendering Mode:** Live2D Cubism with OpenGL
@@ -282,13 +282,13 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
   - `PetExpression` enum for state mapping
   - Motion, expression, and parameter control
   - Physics and pose support
-- ✅ `ui/live2d_widget.py` - OpenGL pet widget (350 lines)
+- ✅ `ui/live2d_widget.py` - OpenGL companion widget (350 lines)
   - QOpenGLWidget-based rendering
   - 60fps update loop
   - State synchronization with NexaBrain
   - Transparent frameless window
-- ✅ `ui/pet_config.py` - Pet configuration (existing)
-- ✅ `ui/nexa_modern_window.py` - Updated pet toggle (supports both types)
+- ✅ `ui/pet_config.py` - Companion configuration (existing)
+- ✅ `ui/nexa_modern_window.py` - Updated companion toggle (supports both types)
 - ✅ 7 custom expression files in `Hiyori/expressions/nexa_*.exp3.json`
 
 #### Live2D Model Used:
@@ -300,7 +300,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🔧 Pet Architecture (Both Modes)
+### 🔧 Companion Architecture (Both Modes)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -346,7 +346,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🐾 Pet Phase P4: Speech Bubble & Response Display
+### 🐾 Companion Phase P4: Speech Bubble & Response Display
 **Status:** 📋 Planned  
 **Estimated Time:** 10-15 hours  
 **Target Start:** After P3 Complete
@@ -357,7 +357,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 - 📋 Animated speech bubble popup
 - 📋 Text typing animation (typewriter effect)
 - 📋 Auto-hide after timeout (configurable)
-- 📋 Position relative to pet (above/beside)
+- 📋 Position relative to companion (above/beside)
 - 📋 Scrollable for long responses
 - 📋 Copy response button
 - 📋 Theme-matched styling
@@ -369,10 +369,10 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
          │ "Sure! I'll open Chrome   │
          │  for you right away~ 💜"  │
          └──────────┬─────────────────┘
-                    │  ← Pointer to pet
+                    │  ← Pointer to companion
                     ▼
               ╭─────────╮
-             (  ◠ ‿ ◠  )  ← Pet character
+             (  ◠ ‿ ◠  )  ← Companion character
               ╰─────────╯
 ```
 
@@ -391,7 +391,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🐾 Pet Phase P5: Quick Actions & Context Menu
+### 🐾 Companion Phase P5: Quick Actions & Context Menu
 **Status:** 📋 Planned  
 **Estimated Time:** 15-20 hours  
 **Target Start:** After P4 Complete
@@ -415,7 +415,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
               🎵 ─────── 📸
             Music        Screenshot
                ╲       ╱
-          ⚙️ ───(PET)─── 🌐
+          ⚙️ ───(COMPANION)─── 🌐
         Settings       Mode
                ╱       ╲
             📱 ─────── 💤
@@ -433,7 +433,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 | Share | 📱 | H | Open share dialog |
 | Mode Toggle | 🌐 | O | Online/Offline |
 | Settings | ⚙️ | , | Open settings |
-| Sleep Mode | 💤 | Z | Pet goes to sleep |
+| Sleep Mode | 💤 | Z | Companion goes to sleep |
 | Exit | ❌ | Esc | Close Nexa |
 
 #### Files to Create:
@@ -443,7 +443,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🐾 Pet Phase P6: Settings Panel & Customization
+### 🐾 Companion Phase P6: Settings Panel & Customization
 **Status:** 📋 Planned  
 **Estimated Time:** 15-20 hours  
 **Target Start:** After P5 Complete
@@ -452,7 +452,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 #### Features Planned:
 - 📋 Slide-out settings panel
-- 📋 Pet size adjustment
+- 📋 Companion size adjustment
 - 📋 Opacity control
 - 📋 Animation speed
 - 📋 Auto-sleep timer
@@ -478,7 +478,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🐾 Pet Phase P7: Personality & Idle Behaviors
+### 🐾 Companion Phase P7: Personality & Idle Behaviors
 **Status:** 📋 Planned  
 **Estimated Time:** 15-20 hours  
 **Target Start:** After P6 Complete
@@ -523,7 +523,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 
 ---
 
-### 🐾 Pet Phase P8: Integration & Polish
+### 🐾 Companion Phase P8: Integration & Polish
 **Status:** 📋 Planned  
 **Estimated Time:** 20-25 hours  
 **Target Start:** After P7 Complete
@@ -533,9 +533,9 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 #### Features Planned:
 - 📋 Full NexaBrain integration
 - 📋 Replace old window UI (optional toggle)
-- 📋 All existing features work with Pet UI
+- 📋 All existing features work with Companion UI
 - 📋 Content Mode integration (bubble or mini-window)
-- 📋 Music indicator on pet
+- 📋 Music indicator on companion
 - 📋 Performance optimization
 - 📋 Memory leak fixes
 - 📋 Comprehensive testing
@@ -544,23 +544,23 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 #### Integration Checklist:
 | Feature | Integration Method |
 |---------|-------------------|
-| Voice Input | Same listener, pet reacts to states |
+| Voice Input | Same listener, companion reacts to states |
 | TTS Output | Speech bubble + speaking animation |
 | Commands | Quick menu + voice |
 | Content Mode | Mini floating window or expand bubble |
-| Music | Pet dances, shows now playing |
-| Settings | Pet settings panel |
-| Themes | Pet color scheme matches |
+| Music | Companion dances, shows now playing |
+| Settings | Companion settings panel |
+| Themes | Companion color scheme matches |
 
 #### Files to Modify:
-- `main.py` - Add pet window option
-- `core/brain.py` - Connect pet callbacks
-- `config/config.py` - Pet settings
+- `main.py` - Add companion window option
+- `core/brain.py` - Connect companion callbacks
+- `config/config.py` - Companion settings
 - All existing features - Ensure compatibility
 
 ---
 
-## 📊 Pet Track Summary
+## 📊 Companion Track Summary
 
 | Phase | Name | Hours | Status |
 |-------|------|-------|--------|
@@ -572,7 +572,7 @@ To use Live2D instead of Sprite, edit `config/pet_preferences.json`:
 | P6 | Settings Panel | 15-20 | 📋 Planned |
 | P7 | Personality & Behaviors | 15-20 | 📋 Planned |
 | P8 | Integration & Polish | 20-25 | 📋 Planned |
-| **TOTAL** | **Complete Pet UI** | **135-175 hours** | - |
+| **TOTAL** | **Complete Companion UI** | **135-175 hours** | - |
 
 ### Estimated Completion: 6-8 weeks (full-time development)
 
@@ -2311,7 +2311,7 @@ NEXA should feel like a real companion - responsive, proactive, and emotionally 
 **Project:** Nexa AI Desktop Assistant
 
 **Current Status:** 64.52% Complete (20/31 phases) - Production Ready with Active Development 🚀  
-**🐾 Pet UI:** Phases P1-P7 COMPLETE ✅ (P8 on hold for feature integration)  
+**🐾 Companion UI:** Phases P1-P7 COMPLETE ✅ (P8 on hold for feature integration)  
 **🎨 Phase 17:** ✅ COMPLETED - Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)  
 **🧠 Phase 20:** ✅ COMPLETED - Smart Memory & Learning (LanceDB + embeddings, 10/10 tests)  
 **🔐 Bonus:** ✅ Login System, Lock Screen, Breathing Glow Title, Sir/Boss Addressing  

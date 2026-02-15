@@ -1,15 +1,15 @@
-# 🐾 Nexa Pet Implementation - Progress Report
+# 🐾 Nexa Companion Implementation - Progress Report
 
 **Last Updated:** December 23, 2025  
-**Project Status:** Phase P7 Complete (87.5% of Pet Track)
+**Project Status:** Phase P7 Complete (87.5% of Companion Track)
 
 ---
 
 ## 📋 Executive Summary
 
-The Nexa Pet is a **desktop companion UI** that serves as an animated, interactive alternative to the traditional voice orb interface. The pet displays Nexa's current state through custom character animations and handles user interactions through speech bubbles with typewriter animations.
+The Nexa Companion is a **desktop companion UI** that serves as an animated, interactive alternative to the traditional voice orb interface. The companion displays Nexa's current state through custom character animations and handles user interactions through speech bubbles with typewriter animations.
 
-**Current Implementation:** Fully functional animated sprite pet with 15 custom character states (8 original + 7 personality), speech bubbles with typewriter effect, futuristic radial menu with 10 quick actions, customizable settings panel, and intelligent personality system with time awareness.
+**Current Implementation:** Fully functional animated sprite companion with 15 custom character states (8 original + 7 personality), speech bubbles with typewriter effect, futuristic radial menu with 10 quick actions, customizable settings panel, and intelligent personality system with time awareness.
 
 ---
 
@@ -25,7 +25,7 @@ The Nexa Pet is a **desktop companion UI** that serves as an animated, interacti
 - ✅ Draggable anywhere on screen
 - ✅ Position persistence (saved to `config/pet_preferences.json`)
 - ✅ Snap to screen edges (configurable)
-- ✅ Click-through prevention (pet stays interactive)
+- ✅ Click-through prevention (companion stays interactive)
 - ✅ Multi-monitor support
 - ✅ Toggle show/hide from main window
 
@@ -162,7 +162,7 @@ QPropertyAnimation (scale: 1.0 → 1.15 → 1.0)
 - ✅ State change callbacks
 - ✅ Resource cleanup on close
 
-##### 2. Pet Size Options
+##### 2. Companion Size Options
 Three sizes available:
 
 | Size | Dimensions | Use Case |
@@ -181,7 +181,7 @@ SIZES = {
 }
 ```
 
-##### 3. Dual Pet System
+##### 3. Dual Companion System
 Both modes available, user can switch:
 
 **Sprite Mode (Default):**
@@ -307,11 +307,11 @@ Nexa-MyAI/
 │       └── content_mode.png      ✅
 │
 ├── config/
-│   └── pet_preferences.json      ✅ Pet settings (auto-created)
+│   └── pet_preferences.json      ✅ Companion settings (auto-created)
 │
 ├── ui/
 │   ├── sprite_pet_widget.py      ✅ Main sprite widget (~530 lines)
-│   └── pet_config.py             ✅ Pet configuration (~265 lines)
+│   └── pet_config.py             ✅ Companion configuration (~265 lines)
 │
 └── docs/
     ├── LIVE2D_PET_GUIDE.md       ✅ Updated (now covers both modes)
@@ -402,7 +402,7 @@ easing: QEasingCurve.OutBounce
 **Date Completed:** December 22, 2025  
 **Actual Time:** ~4 hours
 
-**Goal:** Display Nexa's responses in animated speech bubbles above the pet.
+**Goal:** Display Nexa's responses in animated speech bubbles above the companion.
 
 **Features Implemented:**
 - ✅ Animated speech bubble widget
@@ -415,7 +415,7 @@ easing: QEasingCurve.OutBounce
 - ✅ Theme-matched styling (purple/dark theme)
 - ✅ Emoji support
 - ✅ Fade in/out animations
-- ✅ Smart positioning (above/beside pet)
+- ✅ Smart positioning (above/beside companion)
 
 **Files Created/Modified:**
 - ✅ `ui/pet_speech_bubble.py` (~365 lines) - Speech bubble widget
@@ -497,7 +497,7 @@ TypingAnimator reveals text character-by-character
 **Status:** ✅ Complete  
 **Date Completed:** December 23, 2025
 
-**Goal:** Pet-specific settings UI accessible from radial menu.
+**Goal:** Companion-specific settings UI accessible from radial menu.
 
 #### Features Implemented:
 - ✅ Floating settings panel with futuristic theme
@@ -521,7 +521,7 @@ TypingAnimator reveals text character-by-character
 #### Settings Panel Design:
 ```
 ┌────────────────────────────────────┐
-│ ⚙️ Pet Settings              ✕    │
+│ ⚙️ Companion Settings              ✕    │
 ├────────────────────────────────────┤
 │ 📐 Size           [────●────] 100% │
 │ 🎨 Opacity        [───────●─]  85% │
@@ -541,7 +541,7 @@ TypingAnimator reveals text character-by-character
 **Status:** ✅ Complete  
 **Date Completed:** December 23, 2025
 
-**Goal:** Make pet feel alive with random animations, reactions, and time awareness.
+**Goal:** Make companion feel alive with random animations, reactions, and time awareness.
 
 #### Features Implemented:
 - ✅ Time awareness system (morning/day/evening/night moods)
@@ -574,7 +574,7 @@ TypingAnimator reveals text character-by-character
 - `ui/sprite_pet_widget.py` - Added 7 new states + click detection
 - `ui/pet_settings_panel.py` - Added personality controls
 - `ui/pet_quick_actions.py` - Connected personality signals
-- `ui/nexa_modern_window.py` - Initialize personality on pet creation
+- `ui/nexa_modern_window.py` - Initialize personality on companion creation
 
 #### Settings Panel P7 Controls:
 ```
@@ -604,7 +604,7 @@ TypingAnimator reveals text character-by-character
 - 🧠 Complete NexaBrain integration
 - 🔄 Replace old window UI (optional toggle)
 - 💬 Content Mode integration
-- 🎵 Music indicator on pet
+- 🎥 Music indicator on companion
 - ⚡ Performance optimization
 - 🐛 Memory leak fixes
 - 🧪 Comprehensive testing
@@ -614,20 +614,20 @@ TypingAnimator reveals text character-by-character
 
 | Existing Feature | Integration Method |
 |------------------|-------------------|
-| Voice Input | Pet reacts to listening state |
+| Voice Input | Companion reacts to listening state |
 | TTS Output | Speech bubble + speaking animation |
 | Commands | Quick menu + voice both work |
 | Content Mode | Mini floating window or expanded bubble |
-| Music Manager | Pet dances, shows now playing |
-| Settings | Pet settings panel |
-| Themes | Pet colors match app theme |
-| System Tray | Toggle pet visibility |
+| Music Manager | Companion dances, shows now playing |
+| Settings | Companion settings panel |
+| Themes | Companion colors match app theme |
+| System Tray | Toggle companion visibility |
 
 **Files to Modify:**
-- `main.py` - Add pet window launch option
-- `core/brain.py` - Connect pet state callbacks
-- `config/config.py` - Pet configuration options
-- All command executors - Ensure pet compatibility
+- `main.py` - Add companion window launch option
+- `core/brain.py` - Connect companion state callbacks
+- `config/config.py` - Companion configuration options
+- All command executors - Ensure companion compatibility
 
 ---
 
@@ -636,7 +636,7 @@ TypingAnimator reveals text character-by-character
 ### Completion Status:
 
 ```
-Pet Track Progress:
+Companion Track Progress:
 [███████████████████████████████████░░░░] 87.5%
 
 P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 📋
@@ -686,8 +686,8 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 # Run Nexa
 python main.py
 
-# Toggle pet visibility (in UI)
-# Pet should appear with floating/breathing animations
+# Toggle companion visibility (in UI)
+# Companion should appear with floating/breathing animations
 ```
 
 #### 3. **Verify Files:**
@@ -708,7 +708,7 @@ cat config\pet_preferences.json
 - Frameless QWidget
 - Rounded corners, drop shadow
 - QTextEdit for text content
-- Position above/beside pet
+- Position above/beside companion
 - Auto-dismiss timer
 
 **Step 2: Create `ui/typing_animator.py`**
@@ -739,13 +739,13 @@ cat config\pet_preferences.json
 ## 🔍 Known Issues & Considerations
 
 ### Current Limitations:
-1. **Pet not connected to NexaBrain yet** - Currently shows IDLE state only
+1. **Companion not connected to NexaBrain yet** - Currently shows IDLE state only
    - **Solution:** Implement state callbacks in P8
 
 2. **No speech bubble display** - Responses still go to main window
    - **Solution:** Implement in P4
 
-3. **No user interactions** - Can only drag the pet
+3. **No user interactions** - Can only drag the companion
    - **Solution:** Implement quick menu in P5
 
 4. **Single animation loop** - No variations
@@ -798,21 +798,21 @@ cat config\pet_preferences.json
 
 ## 🎯 Final Vision
 
-**Goal:** Nexa Pet becomes the **primary UI** for the assistant.
+**Goal:** Nexa Companion becomes the **primary UI** for the assistant.
 
 **User Experience:**
-1. User starts Nexa → Pet appears in corner
-2. User says "Hey Nexa" → Pet turns to listening state
-3. User asks question → Pet shows thinking state
+1. User starts Nexa → Companion appears in corner
+2. User says "Hey Nexa" → Companion turns to listening state
+3. User asks question → Companion shows thinking state
 4. Nexa responds → Speech bubble appears with typewriter effect
-5. User right-clicks pet → Quick actions menu
-6. User clicks "Music" → Pet dances, shows now playing
-7. Pet idles → Random animations (stretch, yawn, look around)
-8. User closes main window → Pet remains (minimal mode)
+5. User right-clicks companion → Quick actions menu
+6. User clicks "Music" → Companion dances, shows now playing
+7. Companion idles → Random animations (stretch, yawn, look around)
+8. User closes main window → Companion remains (minimal mode)
 
 **End Result:**
 - Desktop companion that feels **alive**
-- All Nexa features accessible through pet
+- All Nexa features accessible through companion
 - Fun, engaging, anime-style AI assistant
 - Unique among desktop assistants (most are boring chat windows)
 
@@ -823,7 +823,7 @@ cat config\pet_preferences.json
 ### For Next Developer/Agent:
 
 **What You Have:**
-- Fully functional animated sprite pet
+- Fully functional animated sprite companion
 - 8 custom character images
 - Position persistence
 - Dual mode support (Sprite/Live2D)
@@ -839,7 +839,7 @@ cat config\pet_preferences.json
 1. P8 (Integration) - Final polish and complete NexaBrain integration
 
 **Questions to Ask Original Developer:**
-- Should pet **replace** orb UI or **complement** it?
+- Should companion **replace** orb UI or **complement** it?
 - Priority: Desktop Windows version only, or plan for mobile later?
 - Any specific animation preferences? (Speed, style, etc.)
 
@@ -849,7 +849,7 @@ cat config\pet_preferences.json
 
 **Related Files:**
 - `docs/NEXA_PHASES_ROADMAP.md` - Full project roadmap (all phases)
-- `docs/LIVE2D_PET_GUIDE.md` - Technical pet documentation
+- `docs/LIVE2D_PET_GUIDE.md` - Technical companion documentation
 - `docs/NEXA_COMPLETE_DOCUMENTATION.md` - Full Nexa documentation
 - `README.md` - Project overview
 

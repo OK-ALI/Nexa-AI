@@ -1,4 +1,4 @@
-# 🎭 Nexa Pet System - Technical Guide
+# 🎭 Nexa Companion System - Technical Guide
 
 **Created:** December 18, 2025  
 **Last Updated:** December 18, 2025  
@@ -11,7 +11,7 @@
 
 ## 📖 Overview
 
-Nexa's desktop pet supports **two rendering modes**:
+Nexa's desktop companion supports **two rendering modes**:
 
 ### 🎨 Sprite Mode (Default - Recommended)
 Uses **your custom Nexa character PNG images** with programmatic animations:
@@ -29,7 +29,7 @@ Uses **Live2D Cubism** technology with Hiyori model:
 
 ---
 
-## 🎨 Sprite Pet System (Default)
+## 🎨 Sprite Companion System (Default)
 
 ### Features
 | Feature | Description |
@@ -69,7 +69,7 @@ Located in `assets/pet/`:
 | File | Purpose | Lines |
 |------|---------|-------|
 | `ui/sprite_pet_widget.py` | Sprite animation widget | ~530 |
-| `ui/pet_config.py` | Pet preferences & size settings | ~265 |
+| `ui/pet_config.py` | Companion preferences & size settings | ~265 |
 | `assets/pet/*.png` | 8 character state images | - |
 
 ---
@@ -131,7 +131,7 @@ STATE_IMAGES = {
 
 ## ⚙️ Configuration
 
-### Pet Preferences File
+### Companion Preferences File
 Location: `config/pet_preferences.json`
 
 ```json
@@ -148,7 +148,7 @@ Location: `config/pet_preferences.json`
 }
 ```
 
-### Pet Type Options
+### Companion Type Options
 | Value | Description |
 |-------|-------------|
 | `"sprite"` | Animated PNG sprites (default, your custom Nexa character) |
@@ -165,16 +165,16 @@ Location: `config/pet_preferences.json`
 
 ## 📝 Usage
 
-### Toggle Pet
+### Toggle Companion
 Click the 🐾 button in Nexa's main window, or right-click system tray.
 
 ### Change Size
-Right-click the pet → Size → Small/Medium/Large
+Right-click the companion → Size → Small/Medium/Large
 
 ### Test Expressions
-Right-click the pet → Test Expression → Select state
+Right-click the companion → Test Expression → Select state
 
-### Move Pet
+### Move Companion
 Left-click and drag anywhere on screen.
 
 ### Double-Click
@@ -241,7 +241,7 @@ pip install live2d-py PyOpenGL PyOpenGL_accelerate
 ## 🎯 Future Improvements
 
 ### P4: Speech Bubble
-- Animated text bubble above pet
+- Animated text bubble above companion
 - Typewriter effect for responses
 - Auto-dismiss with fade
 
@@ -259,7 +259,7 @@ pip install live2d-py PyOpenGL PyOpenGL_accelerate
 
 ## 🐛 Troubleshooting
 
-### Pet Not Showing
+### Companion Not Showing
 1. Check logs for errors
 2. Verify images exist in `assets/pet/`
 3. Try right-click → Test Expression
@@ -282,7 +282,7 @@ pip install live2d-py PyOpenGL PyOpenGL_accelerate
 
 ## 📚 Resources
 
-- **Sprite Pet:** No external dependencies, PySide6 only
+- **Sprite Companion:** No external dependencies, PySide6 only
 - **live2d-py GitHub:** https://github.com/Arkueid/live2d-py
 - **Live2D SDK:** https://www.live2d.com/sdk/download/native/
 
@@ -311,5 +311,5 @@ pip install live2d-py PyOpenGL PyOpenGL_accelerate
 
 ---
 
-*Last Updated: Phase 3 - Sprite Pet System is now the default, with Live2D available as an alternative.*
+*Last Updated: Phase 3 - Sprite Companion System is now the default, with Live2D available as an alternative.*
 

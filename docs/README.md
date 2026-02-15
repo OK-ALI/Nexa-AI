@@ -28,7 +28,7 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 🎯 **143+ Commands** - Full system control
 - 🎤 **Speaker Verification** - Voice recognition (SpeechBrain)
 - 🎨 **Beautiful UI** - Modern particle orb with HTML5 Canvas
-- 🐾 **Desktop Pet Companion** - Cute animated AI character
+- 🐾 **Desktop Companion** - Cute animated AI character
 - 🧠 **Smart Memory** - Remembers facts, preferences, conversations (LanceDB)
 - 🔐 **Login & Lock Screen** - Secure PBKDF2 authentication
 - 💫 **Breathing Glow Title** - Dynamic title glow following orb state
@@ -60,7 +60,7 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 🖼️ Screen description (online mode)
 - 🎤 Speaker verification (optional)
 
-### Desktop Pet UI (NEW!)
+### Desktop Companion UI (NEW!)
 
 - 🐾 Animated character companion
 - 🎭 8 expressive states (idle, listening, thinking, speaking, sleeping, error, happy, content)
@@ -68,7 +68,7 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 📏 3 size options (Small/Medium/Large)
 - 🖱️ Draggable, always-on-top window
 - 🎨 Custom Nexa character design
-- 🔄 Toggle between orb UI and pet UI
+- 🔄 Toggle between orb UI and companion UI
 
 ### 🧠 Smart Memory
 
@@ -154,11 +154,11 @@ This single comprehensive document contains **EVERYTHING:**
 
 **👉 START HERE:** [NEXA_COMPLETE_DOCUMENTATION.md](NEXA_COMPLETE_DOCUMENTATION.md)
 
-### **🐾 Pet UI Documentation**
+### **🐾 Companion UI Documentation**
 
-- **[NEXA_PET_PROGRESS.md](NEXA_PET_PROGRESS.md)** - Pet implementation progress (P1-P3 complete)
-- **[LIVE2D_PET_GUIDE.md](LIVE2D_PET_GUIDE.md)** - Technical pet guide (Sprite + Live2D)
-- **[NEXA_PHASES_ROADMAP.md](NEXA_PHASES_ROADMAP.md)** - Full project roadmap with pet phases
+- **[NEXA_PET_PROGRESS.md](NEXA_PET_PROGRESS.md)** - Companion implementation progress (P1-P3 complete)
+- **[LIVE2D_PET_GUIDE.md](LIVE2D_PET_GUIDE.md)** - Technical companion guide (Sprite + Live2D)
+- **[NEXA_PHASES_ROADMAP.md](NEXA_PHASES_ROADMAP.md)** - Full project roadmap with companion phases
 
 ---
 
@@ -243,7 +243,7 @@ This single comprehensive document contains **EVERYTHING:**
 - ✅ Voice Interface (Speech + Kokoro TTS)
 - ✅ 143+ System Functions
 - ✅ Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)
-- ✅ Desktop Pet UI (P1-P7: Foundation through Personality)
+- ✅ Desktop Companion UI (P1-P7: Foundation through Personality)
 - ✅ Speaker Verification
 - ✅ Smart Memory & Learning (LanceDB + embeddings)
 - ✅ Login System & Lock Screen (PBKDF2 auth)
@@ -259,7 +259,7 @@ This single comprehensive document contains **EVERYTHING:**
 ### Paused
 
 - ⏸️ Phase 15 - Multi-platform Sharing (core working, automation deferred)
-- ⏸️ Pet Phase P8 - Integration & Polish (waiting for more features)
+- ⏸️ Companion Phase P8 - Integration & Polish (waiting for more features)
 
 ### Planned
 
@@ -332,10 +332,10 @@ This single comprehensive document contains **EVERYTHING:**
 2. **Privacy-First** - 100% offline capable
 3. **Natural Conversations** - No rigid commands
 4. **Context Aware** - Remembers conversation
-5. **Beautiful Interface** - Animated voice orb + Desktop pet companion
+5. **Beautiful Interface** - Animated voice orb + Desktop companion
 6. **GPU Accelerated** - Fast processing
 7. **Speaker Verification** - Voice recognition
-8. **Desktop Pet UI** - Cute animated character that reacts to your voice
+8. **Desktop Companion UI** - Cute animated character that reacts to your voice
 9. **Open Source** - Full control
 
 ---

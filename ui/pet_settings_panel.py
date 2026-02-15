@@ -100,7 +100,7 @@ class PetSettingsPanel(QWidget):
         header = QHBoxLayout()
         header.setSpacing(10)
         
-        title = QLabel("Pet Settings")
+        title = QLabel("Companion Settings")
         title.setObjectName("panelTitle")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         

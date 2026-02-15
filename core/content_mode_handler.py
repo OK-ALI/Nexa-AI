@@ -374,10 +374,13 @@ class ContentModeHandler:
         if self.content_window is not None:
             self.content_window.set_status("✓ Ready - Now you can say refinement commands", 3000)
         
-        # Optionally: Speak confirmation
+        # Optionally: Speak confirmation (non-blocking to avoid freezing UI)
         if hasattr(self.executor, 'brain') and self.executor.brain:
             try:
-                self.executor.brain._speak_response("Content received. What would you like me to do with it?")
+                self.executor.brain.tts.speak(
+                    "Content received. What would you like me to do with it?",
+                    blocking=False, ducking=True
+                )
             except Exception as e:
                 logger.debug(f"Could not speak confirmation: {e}")
     

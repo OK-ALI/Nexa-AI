@@ -112,7 +112,7 @@ class Live2DPetWidget(QOpenGLWidget):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         
         # Set window title (for debugging)
-        self.setWindowTitle("Nexa Pet (Live2D)")
+        self.setWindowTitle("Nexa Companion (Live2D)")
         
         # Get size from config
         width, height = self.config.get_size_dimensions()
@@ -313,8 +313,8 @@ class Live2DPetWidget(QOpenGLWidget):
         
         menu.addSeparator()
         
-        # Hide pet action
-        hide_action = QAction("Hide Pet", self)
+        # Hide companion action
+        hide_action = QAction("Hide Companion", self)
         hide_action.triggered.connect(self.hide_pet)
         menu.addAction(hide_action)
         

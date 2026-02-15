@@ -110,7 +110,7 @@ class NexaPetWidget(QWidget):
         self.setStyleSheet("background: transparent;")
         
         # Set window title (for debugging)
-        self.setWindowTitle("Nexa Pet")
+        self.setWindowTitle("Nexa Companion")
         
         # Get size from config
         width, height = self.config.get_size_dimensions()
@@ -547,8 +547,8 @@ class NexaPetWidget(QWidget):
         
         menu.addSeparator()
         
-        # Hide pet action
-        hide_action = QAction("Hide Pet", self)
+        # Hide companion action
+        hide_action = QAction("Hide Companion", self)
         hide_action.triggered.connect(self.hide_pet)
         menu.addAction(hide_action)
         

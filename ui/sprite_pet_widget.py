@@ -211,7 +211,7 @@ class SpritePetWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setStyleSheet("background: transparent;")
-        self.setWindowTitle("Nexa Pet")
+        self.setWindowTitle("Nexa Companion")
         
         # Get size from config
         width, height = self.config.get_size_dimensions()
@@ -816,7 +816,7 @@ class SpritePetWidget(QWidget):
         menu.addSeparator()
         
         # Close
-        close_action = menu.addAction("❌ Hide Pet")
+        close_action = menu.addAction("❌ Hide Companion")
         close_action.triggered.connect(self._close_pet)
         
         menu.exec_(pos)

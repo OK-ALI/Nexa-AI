@@ -130,8 +130,8 @@ class TTSEngine:
         self.speaking_start_callback = None
         self.speaking_end_callback = None
         
-        # Response text callback (for pet speech bubble P4)
-        # This callback receives the text being spoken so pet can display it
+        # Response text callback (for companion speech bubble)
+        # This callback receives the text being spoken so companion can display it
         self.response_text_callback = None
         
         # === STREAMING TTS INFRASTRUCTURE ===
@@ -218,7 +218,8 @@ class TTSEngine:
             text: Text to speak
             wait: Whether to wait for playback to finish (deprecated, use blocking)
             ducking: Whether to duck background music during speech
-            blocking: Whether to block until speech completes (same as wait)
+            blocking: Whether to block until speech completes.
+                      If False, runs TTS in a background thread so the caller (e.g. UI) is not frozen.
             silent: If True, skip state callbacks (for thinking feedback - stay in THINKING state)
             speed: Speech speed multiplier (0.5 = half speed, 1.0 = normal, 2.0 = double)
         """
@@ -226,6 +227,32 @@ class TTSEngine:
             logger.warning("⚠️ Empty text provided to TTS")
             return
         
+        if blocking:
+            # Synchronous path - blocks caller until speech finishes
+            self._speak_core(text, ducking=ducking, silent=silent, speed=speed)
+        else:
+            # Non-blocking path - run TTS in a background thread so UI stays responsive
+            tts_thread = threading.Thread(
+                target=self._speak_core,
+                args=(text,),
+                kwargs={"ducking": ducking, "silent": silent, "speed": speed},
+                daemon=True,
+                name="TTS-NonBlocking"
+            )
+            tts_thread.start()
+            logger.debug("🔊 TTS started in non-blocking mode (background thread)")
+    
+    def _speak_core(self, text, ducking=False, silent=False, speed=1.0):
+        """
+        Core speak implementation. Always runs synchronously.
+        Called directly for blocking mode, or in a background thread for non-blocking.
+        
+        Args:
+            text: Text to speak
+            ducking: Whether to duck background music during speech
+            silent: If True, skip state callbacks
+            speed: Speech speed multiplier
+        """
         try:
             # CRITICAL: Stop any currently playing speech to prevent echo/overlap
             if self.is_speaking():
@@ -239,7 +266,7 @@ class TTSEngine:
                 except Exception as e:
                     logger.error(f"Error in speaking_start_callback: {e}")
             
-            # P4: Send response text to pet speech bubble (skip if silent - thinking phrases don't go to pet)
+            # P4: Send response text to companion speech bubble (skip if silent - thinking phrases don't show)
             if not silent and self.response_text_callback:
                 try:
                     self.response_text_callback(text)
@@ -419,12 +446,15 @@ class TTSEngine:
                 logger.error("❌ Temp audio file not found!")
                 return
             
-            # Load and play
+            # Load and play at full volume
             sound = pygame.mixer.Sound(str(temp_path))
+            sound.set_volume(1.0)  # Ensure TTS is at maximum volume
             self._current_sounds.append(sound)
             
             with self._playback_lock:
                 self.current_channel = sound.play()
+                if self.current_channel:
+                    self.current_channel.set_volume(1.0)  # Max channel volume for clarity over music
             
             logger.debug(f"▶️ Playing chunk {chunk_num}/{total_chunks}")
             

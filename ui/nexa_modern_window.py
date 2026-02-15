@@ -118,11 +118,11 @@ class NexaModernWindow(QMainWindow):
         
         logger.info("✅ Music indicator connected to music manager (including popup controls)")
         
-        # P4: Connect TTS response text callback for pet speech bubble
+        # P4: Connect TTS response text callback for companion speech bubble
         # The callback emits a signal because TTS runs in a worker thread
         self.response_text_signal.connect(self._on_response_text)
         self.brain.tts.response_text_callback = lambda text: self.response_text_signal.emit(text)
-        logger.info("✅ Pet speech bubble connected to TTS (thread-safe)")
+        logger.info("✅ Companion speech bubble connected to TTS (thread-safe)")
         
         # Set initial mode button state
         QTimer.singleShot(500, self._update_mode_button)

@@ -2,7 +2,7 @@
 
 **Total Voice Commands:** 100+  
 **Last Updated:** January 1, 2026  
-**Status:** Phase 16 Complete (16/30 Phases + Pet Track)  
+**Status:** Phase 16 Complete (16/30 Phases + Companion Track)  
 **Next Priority:** 💜 Companion Mode (Phases 27-30)
 
 ---
@@ -30,7 +30,7 @@
 | Content Mode & PDF | 17 | ✅ Phase 14 |
 | File Sharing | 6 | ⏸️ Phase 15 (Paused) |
 | System Control | 26 | ✅ Phase 16 |
-| Desktop Pet | N/A (Sprite/Live2D) | ✅ Pet P1-P3 |
+| Desktop Companion | N/A (Sprite/Live2D) | ✅ Companion P1-P3 |
 | Smart Memory | 5 | 🔧 Testing |
 | **Companion Mode** | **Phases 27-30** | 📋 **HIGH PRIORITY** |
 
@@ -303,7 +303,7 @@
 
 ---
 
-### 🐾 Desktop Pet (P1-P3 Complete)
+### 🐾 Desktop Companion (P1-P3 Complete)
 | Feature | Description |
 |---------|-------------|
 | **Sprite Mode** | Custom Nexa character with 8 states, floating/breathing animations |

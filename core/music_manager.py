@@ -68,7 +68,7 @@ class MusicManager(QObject):
         self.normal_volume: float = 0.85    # 85% - Normal music playback volume
         self.listening_volume: float = 0.70 # 70% - During wake word listening (good volume, ducking handles the rest)
         self.pre_duck_volume: float = 0.15  # 15% - When VAD shows ANY speech probability (pre-emptive ducking)
-        self.duck_volume: float = 0.08      # 8% - During confirmed speech recording (low but audible)
+        self.duck_volume: float = 0.03      # 3% - During confirmed speech / TTS playback (near-mute for NEXA voice clarity)
         self.current_volume_state: str = 'normal'  # 'normal', 'listening', 'pre_duck', 'ducked'
         self.is_ducked: bool = False
         self.is_pre_ducked: bool = False
