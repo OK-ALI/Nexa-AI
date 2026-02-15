@@ -1390,6 +1390,10 @@ User: {user_text}"""
                 self.tts.stop()
                 time.sleep(0.1)  # Brief pause to let audio channel fully release
             
+            # Transition to SPEAKING state immediately so UI stops showing
+            # thinking feedback and shows responding state instead
+            self._change_state(NexaState.SPEAKING)
+            
             # Emit response message and speak
             logger.debug(f"Emitting response to UI")
             self._emit_message("nexa", response)

@@ -212,9 +212,14 @@ class PetQuickActions(QObject):
             if not self.settings_panel:
                 from ui.pet_settings_panel import PetSettingsPanel
                 
-                # Get config from window's pet_config
+                # Get config from the pet widget itself so settings changes
+                # are reflected immediately in the pet's in-memory config
                 config = None
-                if self.window and hasattr(self.window, 'pet_config'):
+                if self.window and hasattr(self.window, 'pet_widget') and self.window.pet_widget:
+                    if hasattr(self.window.pet_widget, 'config'):
+                        config = self.window.pet_widget.config
+                # Fallback to window's pet_config
+                if config is None and self.window and hasattr(self.window, 'pet_config'):
                     config = self.window.pet_config
                 
                 self.settings_panel = PetSettingsPanel(config=config)
@@ -302,13 +307,19 @@ class PetQuickActions(QObject):
     def _on_glow_setting_changed(self, val):
         pet = self._get_pet()
         if pet:
-            pet.update()
+            # Ensure config is updated on the pet's own config object
+            if hasattr(pet, 'config') and pet.config:
+                pet.config.set('glow_enabled', val)
+            pet.update()  # Repaint to reflect glow change
             logger.info(f"✨ Glow toggled: {val}")
     
     def _on_glow_intensity_setting_changed(self, val):
         pet = self._get_pet()
         if pet:
-            pet.update()
+            # Ensure config is updated on the pet's own config object
+            if hasattr(pet, 'config') and pet.config:
+                pet.config.set('glow_intensity', val)
+            pet.update()  # Repaint to reflect intensity change
             logger.info(f"✨ Glow intensity: {val}")
     
     def _on_animations_setting_changed(self, val):

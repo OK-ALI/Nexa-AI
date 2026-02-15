@@ -150,6 +150,38 @@ class PDFGenerator:
     
     # --- HTML Processing Methods ---
     
+    # Map common web/system font names to ReportLab-compatible PostScript names
+    FONT_NAME_MAP = {
+        'times new roman': 'Times-Roman',
+        'times': 'Times-Roman',
+        'arial': 'Helvetica',
+        'helvetica': 'Helvetica',
+        'courier new': 'Courier',
+        'courier': 'Courier',
+        'georgia': 'Times-Roman',
+        'verdana': 'Helvetica',
+        'trebuchet ms': 'Helvetica',
+        'comic sans ms': 'Helvetica',
+        'segoe ui': 'Helvetica',
+        'tahoma': 'Helvetica',
+        'calibri': 'Helvetica',
+        'cambria': 'Times-Roman',
+        'consolas': 'Courier',
+        'lucida console': 'Courier',
+        'palatino': 'Times-Roman',
+        'garamond': 'Times-Roman',
+        'book antiqua': 'Times-Roman',
+    }
+
+    def _map_font_name(self, font_name: str) -> str:
+        """Map a web/system font name to a ReportLab-compatible PostScript name."""
+        mapped = self.FONT_NAME_MAP.get(font_name.lower().strip(), None)
+        if mapped:
+            return mapped
+        # If not in map, return Helvetica as safe default
+        logger.debug(f"Unknown font '{font_name}', defaulting to Helvetica")
+        return 'Helvetica'
+
     def _clean_inline_html(self, html: str) -> str:
         """
         Clean inline HTML tags to ReportLab-compatible markup.
@@ -169,10 +201,11 @@ class PDFGenerator:
             if size_m:
                 parts.append(f'size="{int(float(size_m.group(1)))}"')
             
-            # Extract face attribute
+            # Extract face attribute and map to PostScript name
             face_m = re.search(r'face="([^"]*)"', attrs_str)
             if face_m:
-                parts.append(f'face="{face_m.group(1)}"')
+                mapped_face = self._map_font_name(face_m.group(1))
+                parts.append(f'face="{mapped_face}"')
             
             # Extract color attribute
             color_m = re.search(r'color="([^"]*)"', attrs_str)

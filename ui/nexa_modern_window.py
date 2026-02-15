@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize
+from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QMouseEvent, QColor
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
@@ -1179,10 +1179,19 @@ class NexaModernWindow(QMainWindow):
             content_window.pdf_requested.connect(executor._on_pdf_requested)
             content_window.content_ready.connect(executor._on_content_ready)  # NEW: Connect ready signal
             
-            # Show the window
+            # Show the window with smooth fade-in transition
+            content_window.setWindowOpacity(0.0)
             content_window.show()
             content_window.raise_()
             content_window.activateWindow()
+            
+            # Fade-in animation
+            self._content_fade_anim = QPropertyAnimation(content_window, b"windowOpacity")
+            self._content_fade_anim.setDuration(300)
+            self._content_fade_anim.setStartValue(0.0)
+            self._content_fade_anim.setEndValue(1.0)
+            self._content_fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._content_fade_anim.start()
             
             logger.info("📝 Content Box window created successfully in main thread with theme sync")
             
@@ -1205,16 +1214,23 @@ class NexaModernWindow(QMainWindow):
                 window = executor.content_window
                 logger.info(f"🚪 Closing content window in main thread (visible: {window.isVisible()})")
                 
-                # Close window - safe because we're in main thread
-                window.hide()
-                window.close()
-                window.deleteLater()
+                # Fade-out animation before closing
+                self._content_close_anim = QPropertyAnimation(window, b"windowOpacity")
+                self._content_close_anim.setDuration(200)
+                self._content_close_anim.setStartValue(1.0)
+                self._content_close_anim.setEndValue(0.0)
+                self._content_close_anim.setEasingCurve(QEasingCurve.Type.InCubic)
                 
-                # Clear reference and reset flag
-                executor.content_window = None
-                executor._content_mode_exiting = False
+                def _finish_close():
+                    window.hide()
+                    window.close()
+                    window.deleteLater()
+                    executor.content_window = None
+                    executor._content_mode_exiting = False
+                    logger.info("✅ Content window closed successfully")
                 
-                logger.info("✅ Content window closed successfully")
+                self._content_close_anim.finished.connect(_finish_close)
+                self._content_close_anim.start()
             else:
                 logger.warning("⚠️ No content window to close in slot")
                 executor._content_mode_exiting = False
@@ -1288,6 +1304,10 @@ class NexaModernWindow(QMainWindow):
                 # Connect closed signal
                 self.pet_widget.closed.connect(self._on_pet_closed)
                 
+                # Sync window's pet_config with pet widget's config to avoid dual instances
+                if hasattr(self.pet_widget, 'config') and self.pet_widget.config:
+                    self.pet_config = self.pet_widget.config
+                
                 # P5: Create and connect quick actions for radial menu
                 self._setup_pet_quick_actions()
             
@@ -1345,15 +1365,31 @@ class NexaModernWindow(QMainWindow):
                 )
                 self.memory_panel.closed.connect(lambda: logger.info("🧠 Neural Memory Panel closed"))
             
-            # Toggle visibility
+            # Toggle visibility with smooth transitions
             if self.memory_panel.isVisible():
-                self.memory_panel.hide()
-                logger.info("🧠 Neural Memory Panel hidden")
+                # Fade-out animation
+                self._memory_fade_anim = QPropertyAnimation(self.memory_panel, b"windowOpacity")
+                self._memory_fade_anim.setDuration(200)
+                self._memory_fade_anim.setStartValue(1.0)
+                self._memory_fade_anim.setEndValue(0.0)
+                self._memory_fade_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+                self._memory_fade_anim.finished.connect(self.memory_panel.hide)
+                self._memory_fade_anim.start()
+                logger.info("🧠 Neural Memory Panel hiding (fade-out)")
             else:
+                self.memory_panel.setWindowOpacity(0.0)
                 self.memory_panel.show()
                 self.memory_panel.raise_()
                 self.memory_panel.activateWindow()
-                logger.info("🧠 Neural Memory Panel shown")
+                
+                # Fade-in animation
+                self._memory_fade_anim = QPropertyAnimation(self.memory_panel, b"windowOpacity")
+                self._memory_fade_anim.setDuration(300)
+                self._memory_fade_anim.setStartValue(0.0)
+                self._memory_fade_anim.setEndValue(1.0)
+                self._memory_fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                self._memory_fade_anim.start()
+                logger.info("🧠 Neural Memory Panel shown (fade-in)")
                 
         except Exception as e:
             logger.error(f"Failed to toggle Neural Memory Panel: {e}")

@@ -127,7 +127,7 @@
             background: linear-gradient(to bottom, #33e0ff, #a855f7);
         }
 
-        /* ── Hidden color picker ── */
+        /* ── Hidden native color input (used as fallback) ── */
         #colorPicker {
             position: absolute;
             visibility: hidden;
@@ -143,6 +143,160 @@
             border-radius: 1px;
             margin-top: 1px;
         }
+
+        /* ── Custom Color Picker Popup ── */
+        #colorPopup {
+            display: none;
+            position: absolute;
+            top: 46px;
+            right: 80px;
+            z-index: 1000;
+            background: rgba(15, 22, 40, 0.97);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            padding: 14px;
+            width: 240px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 212, 255, 0.1);
+            backdrop-filter: blur(16px);
+        }
+        #colorPopup.show { display: block; }
+
+        .cp-preview {
+            width: 100%;
+            height: 36px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.15);
+            margin-bottom: 10px;
+        }
+
+        .cp-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        .cp-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            transition: transform 0.15s, border-color 0.15s;
+        }
+        .cp-swatch:hover {
+            transform: scale(1.2);
+            border-color: rgba(0, 212, 255, 0.6);
+        }
+
+        .cp-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .cp-label {
+            color: rgba(200, 216, 232, 0.8);
+            font-size: 11px;
+            font-weight: 600;
+            width: 14px;
+            flex-shrink: 0;
+        }
+        .cp-slider {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(50, 70, 100, 0.6);
+            border-radius: 3px;
+            outline: none;
+        }
+        .cp-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #00d4ff;
+            border: 2px solid rgba(255,255,255,0.3);
+            cursor: pointer;
+        }
+        .cp-slider.slider-r::-webkit-slider-thumb { background: #ff5555; }
+        .cp-slider.slider-g::-webkit-slider-thumb { background: #55ff55; }
+        .cp-slider.slider-b::-webkit-slider-thumb { background: #5555ff; }
+
+        .cp-input {
+            width: 42px;
+            height: 24px;
+            background: rgba(50, 70, 100, 0.5);
+            border: 1px solid rgba(100, 120, 150, 0.4);
+            border-radius: 4px;
+            color: #e0e8f0;
+            font-size: 11px;
+            text-align: center;
+            outline: none;
+            flex-shrink: 0;
+        }
+        .cp-input:focus {
+            border-color: rgba(0, 212, 255, 0.6);
+        }
+
+        .cp-hex-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .cp-hex-label {
+            color: rgba(200, 216, 232, 0.6);
+            font-size: 11px;
+        }
+        .cp-hex-input {
+            flex: 1;
+            height: 26px;
+            background: rgba(50, 70, 100, 0.5);
+            border: 1px solid rgba(100, 120, 150, 0.4);
+            border-radius: 4px;
+            color: #e0e8f0;
+            font-size: 12px;
+            padding: 0 8px;
+            font-family: 'Consolas', monospace;
+            outline: none;
+        }
+        .cp-hex-input:focus {
+            border-color: rgba(0, 212, 255, 0.6);
+        }
+        .cp-apply-btn {
+            height: 28px;
+            padding: 0 12px;
+            background: rgba(0, 212, 255, 0.2);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            border-radius: 5px;
+            color: #00d4ff;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .cp-apply-btn:hover {
+            background: rgba(0, 212, 255, 0.35);
+        }
+
+        /* Light theme overrides for color picker */
+        body.light #colorPopup {
+            background: rgba(240, 243, 248, 0.97);
+            border-color: rgba(0, 90, 153, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        }
+        body.light .cp-label { color: rgba(58, 69, 96, 0.8); }
+        body.light .cp-input, body.light .cp-hex-input {
+            background: rgba(200, 210, 225, 0.7);
+            color: #1a2240;
+            border-color: rgba(0, 90, 153, 0.2);
+        }
+        body.light .cp-slider { background: rgba(200, 210, 225, 0.6); }
+        body.light .cp-hex-label { color: rgba(58, 69, 96, 0.6); }
+        body.light .cp-swatch { border-color: rgba(0,0,0,0.12); }
 
         /* ── Element-specific sizes ── */
         #selFont { width: 125px; }
@@ -272,8 +426,41 @@
 <div id="editor" contenteditable="true" class="empty"
      spellcheck="true"></div>
 
-<!-- Hidden color input -->
+<!-- Hidden native color input (fallback) -->
 <input type="color" id="colorPicker" value="#ffffff">
+
+<!-- Custom Color Picker Popup -->
+<div id="colorPopup">
+    <!-- Preview -->
+    <div class="cp-preview" id="cpPreview" style="background: #ffffff;"></div>
+
+    <!-- Preset colors -->
+    <div class="cp-presets" id="cpPresets"></div>
+
+    <!-- R/G/B sliders with numeric inputs -->
+    <div class="cp-row">
+        <span class="cp-label">R</span>
+        <input type="range" class="cp-slider slider-r" id="cpR" min="0" max="255" value="255">
+        <input type="number" class="cp-input" id="cpRVal" min="0" max="255" value="255">
+    </div>
+    <div class="cp-row">
+        <span class="cp-label">G</span>
+        <input type="range" class="cp-slider slider-g" id="cpG" min="0" max="255" value="255">
+        <input type="number" class="cp-input" id="cpGVal" min="0" max="255" value="255">
+    </div>
+    <div class="cp-row">
+        <span class="cp-label">B</span>
+        <input type="range" class="cp-slider slider-b" id="cpB" min="0" max="255" value="255">
+        <input type="number" class="cp-input" id="cpBVal" min="0" max="255" value="255">
+    </div>
+
+    <!-- Hex input + Apply -->
+    <div class="cp-hex-row">
+        <span class="cp-hex-label">HEX</span>
+        <input type="text" class="cp-hex-input" id="cpHex" value="#ffffff" maxlength="7">
+        <button class="cp-apply-btn" onclick="applyPickedColor()">Apply</button>
+    </div>
+</div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -319,12 +506,126 @@ editor.addEventListener('paste', function(e) {
     document.execCommand('insertText', false, text);
 });
 
-// ── Color picker ──
+// ── Color picker (native fallback) ──
 document.getElementById('colorPicker').addEventListener('input', function() {
     document.execCommand('foreColor', false, this.value);
     document.getElementById('colorInd').style.background = this.value;
     editor.focus();
     notifyPython();
+});
+
+// ══════════════════════════════════════════
+// CUSTOM COLOR PICKER
+// ══════════════════════════════════════════
+
+var _cpPresets = [
+    '#ffffff', '#000000', '#ff0000', '#00cc00', '#0066ff', '#ff6600',
+    '#9933ff', '#ff3399', '#00cccc', '#ffcc00', '#66ff66', '#ff6666',
+    '#6699ff', '#cc66ff', '#ff9966', '#99ccff'
+];
+
+// Build preset swatches
+(function() {
+    var container = document.getElementById('cpPresets');
+    _cpPresets.forEach(function(c) {
+        var swatch = document.createElement('div');
+        swatch.className = 'cp-swatch';
+        swatch.style.background = c;
+        swatch.title = c;
+        swatch.onclick = function() { cpSetHex(c); applyPickedColor(); };
+        container.appendChild(swatch);
+    });
+})();
+
+// Sync sliders ↔ inputs ↔ hex ↔ preview
+function cpSync(source) {
+    var r, g, b;
+    if (source === 'hex') {
+        var hex = document.getElementById('cpHex').value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+            r = parseInt(hex.substr(1,2), 16);
+            g = parseInt(hex.substr(3,2), 16);
+            b = parseInt(hex.substr(5,2), 16);
+        } else return;
+    } else if (source === 'input') {
+        r = Math.max(0, Math.min(255, parseInt(document.getElementById('cpRVal').value) || 0));
+        g = Math.max(0, Math.min(255, parseInt(document.getElementById('cpGVal').value) || 0));
+        b = Math.max(0, Math.min(255, parseInt(document.getElementById('cpBVal').value) || 0));
+    } else {
+        r = parseInt(document.getElementById('cpR').value);
+        g = parseInt(document.getElementById('cpG').value);
+        b = parseInt(document.getElementById('cpB').value);
+    }
+
+    // Update all controls
+    document.getElementById('cpR').value = r;
+    document.getElementById('cpG').value = g;
+    document.getElementById('cpB').value = b;
+    document.getElementById('cpRVal').value = r;
+    document.getElementById('cpGVal').value = g;
+    document.getElementById('cpBVal').value = b;
+
+    var hex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    document.getElementById('cpHex').value = hex;
+    document.getElementById('cpPreview').style.background = hex;
+}
+
+function cpSetHex(hex) {
+    document.getElementById('cpHex').value = hex;
+    cpSync('hex');
+}
+
+// Slider events
+['cpR', 'cpG', 'cpB'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', function() { cpSync('slider'); });
+});
+// Number input events
+['cpRVal', 'cpGVal', 'cpBVal'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', function() { cpSync('input'); });
+});
+// Hex input event
+document.getElementById('cpHex').addEventListener('input', function() { cpSync('hex'); });
+
+function applyPickedColor() {
+    var hex = document.getElementById('cpHex').value;
+    editor.focus();
+    document.execCommand('foreColor', false, hex);
+    document.getElementById('colorInd').style.background = hex;
+    document.getElementById('colorPopup').classList.remove('show');
+    notifyPython();
+}
+
+function openColorPicker() {
+    var popup = document.getElementById('colorPopup');
+    if (popup.classList.contains('show')) {
+        popup.classList.remove('show');
+    } else {
+        // Read current text color
+        var cur = document.queryCommandValue('foreColor');
+        if (cur) {
+            // Browser may return rgb(r,g,b) - convert to hex
+            var m = cur.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            if (m) {
+                var r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                cur = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            }
+            if (/^#[0-9a-fA-F]{6}$/.test(cur)) {
+                cpSetHex(cur);
+            }
+        }
+        popup.classList.add('show');
+    }
+}
+
+// Close color picker when clicking outside
+document.addEventListener('click', function(e) {
+    var popup = document.getElementById('colorPopup');
+    if (popup.classList.contains('show')) {
+        // Check if click is outside popup and not on the color button
+        if (!popup.contains(e.target) && !e.target.closest('[onclick="openColorPicker()"]')) {
+            popup.classList.remove('show');
+        }
+    }
 });
 
 // ════════════════════════════════════════

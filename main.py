@@ -41,6 +41,7 @@ from PySide6.QtWidgets import QApplication
 from ui.nexa_modern_window import NexaModernWindow
 from core.auth_manager import AuthManager
 from ui.login_dialog import LoginDialog
+from ui.loading_dialog import LoadingDialog
 
 # Global references
 hud_window = None
@@ -49,9 +50,12 @@ config_instance = None
 gpu_monitor = None  # NEW: GPU monitor instance
 
 
-def initialize_application():
+def initialize_application(loading_dialog=None):
     """
     Initialize all core components and verify system requirements.
+    
+    Args:
+        loading_dialog: Optional LoadingDialog instance for status updates
     
     Returns:
         tuple: (config, brain, success_flag)
@@ -59,13 +63,19 @@ def initialize_application():
     logger = logging.getLogger(__name__)
     log_section(logger, "NEXA AI ASSISTANT - INITIALIZATION", logging.INFO)
     
+    def update_status(status, detail=""):
+        if loading_dialog:
+            loading_dialog.set_status(status, detail)
+    
     try:
         # Load configuration
+        update_status("Loading configuration...", "Reading settings and environment")
         logger.info("📋 Loading configuration...")
         config = Config()
         logger.info("✅ Configuration loaded successfully")
         
         # Verify critical paths
+        update_status("Verifying system...", "Checking models and paths")
         logger.info("🔍 Verifying system requirements...")
         if not config.verify_setup():
             logger.error("❌ System verification failed. Check your .env and model paths.")
@@ -74,17 +84,20 @@ def initialize_application():
         logger.info("✅ System verification passed")
         
         # Initialize Nexa Brain
+        update_status("Initializing AI Brain...", "Loading LLM, STT, and TTS models")
         logger.info("🧠 Initializing Nexa Brain...")
         brain = NexaBrain(config)
         logger.info("✅ Nexa Brain initialized successfully")
         
         # Verify LLM model is ready (warm-up happens during LLMManager init)
         if brain.llm_manager.ollama_prewarmed:
+            update_status("AI model ready!", "Pre-warmed for instant responses")
             logger.info("🚀 AI model pre-warmed and ready - first command will be instant!")
         else:
             logger.warning("⚠️ AI model not pre-warmed - first command may take 30-60 seconds to load model into memory")
         
         # Initialize GPU Monitor
+        update_status("Starting GPU Monitor...", "Tracking model memory usage")
         logger.info("📊 Initializing GPU Monitor...")
         global gpu_monitor
         gpu_reports_dir = config.logs_dir / "gpu_reports"
@@ -186,12 +199,21 @@ def main():
         
         logger.info(f"🔐 Authenticated as: {auth_manager.current_user}")
         
+        # Show loading dialog while initializing
+        loading_dialog = LoadingDialog()
+        loading_dialog.show()
+        QApplication.processEvents()
+        
         # Initialize core components AFTER wizard (so API keys are loaded)
-        config_instance, brain_instance, success = initialize_application()
+        config_instance, brain_instance, success = initialize_application(loading_dialog)
         
         if not success:
+            loading_dialog.close_dialog()
             logger.critical("Failed to initialize Nexa. Exiting.")
             sys.exit(1)
+        
+        # Update loading status before creating UI
+        loading_dialog.set_status("Launching interface...", "Creating main window")
         
         # Create Modern window (new clean design matching reference image)
         log_section(logger, "LAUNCHING NEXA UI", logging.INFO)
@@ -199,6 +221,9 @@ def main():
         
         # Attach lock screen to window
         hud_window.setup_lock_screen(auth_manager)
+        
+        # Close loading dialog before showing main window
+        loading_dialog.close_dialog()
         
         hud_window.show()
         logger.info("✅ Modern UI launched")
