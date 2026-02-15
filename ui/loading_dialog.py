@@ -177,11 +177,10 @@ class LoadingDialog(QDialog):
         layout.addWidget(footer)
 
     def set_status(self, text: str, detail: str = ""):
-        """Update the status and detail text."""
+        """Update the status and detail text (thread-safe via signal connection)."""
         self.status_label.setText(text)
         if detail:
             self.detail_label.setText(detail)
-        QApplication.processEvents()
 
     def close_dialog(self):
         """Stop spinner and close."""

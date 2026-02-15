@@ -38,6 +38,7 @@ from utils.error_handler import handle_error, ErrorCategory, ErrorSeverity
 
 # Import UI components
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QThread, Signal, QObject, QTimer
 from ui.nexa_modern_window import NexaModernWindow
 from core.auth_manager import AuthManager
 from ui.login_dialog import LoginDialog
@@ -50,81 +51,81 @@ config_instance = None
 gpu_monitor = None  # NEW: GPU monitor instance
 
 
-def initialize_application(loading_dialog=None):
+class InitWorker(QThread):
     """
-    Initialize all core components and verify system requirements.
-    
-    Args:
-        loading_dialog: Optional LoadingDialog instance for status updates
-    
-    Returns:
-        tuple: (config, brain, success_flag)
+    Background thread for heavy initialization (model loading).
+    Emits signals so the main thread event loop stays free and the
+    loading spinner keeps spinning smoothly.
     """
-    logger = logging.getLogger(__name__)
-    log_section(logger, "NEXA AI ASSISTANT - INITIALIZATION", logging.INFO)
-    
-    def update_status(status, detail=""):
-        if loading_dialog:
-            loading_dialog.set_status(status, detail)
-    
-    try:
-        # Load configuration
-        update_status("Loading configuration...", "Reading settings and environment")
-        logger.info("📋 Loading configuration...")
-        config = Config()
-        logger.info("✅ Configuration loaded successfully")
-        
-        # Verify critical paths
-        update_status("Verifying system...", "Checking models and paths")
-        logger.info("🔍 Verifying system requirements...")
-        if not config.verify_setup():
-            logger.error("❌ System verification failed. Check your .env and model paths.")
-            return None, None, False
-        
-        logger.info("✅ System verification passed")
-        
-        # Initialize Nexa Brain
-        update_status("Initializing AI Brain...", "Loading LLM, STT, and TTS models")
-        logger.info("🧠 Initializing Nexa Brain...")
-        brain = NexaBrain(config)
-        logger.info("✅ Nexa Brain initialized successfully")
-        
-        # Verify LLM model is ready (warm-up happens during LLMManager init)
-        if brain.llm_manager.ollama_prewarmed:
-            update_status("AI model ready!", "Pre-warmed for instant responses")
-            logger.info("🚀 AI model pre-warmed and ready - first command will be instant!")
-        else:
-            logger.warning("⚠️ AI model not pre-warmed - first command may take 30-60 seconds to load model into memory")
-        
-        # Initialize GPU Monitor
-        update_status("Starting GPU Monitor...", "Tracking model memory usage")
-        logger.info("📊 Initializing GPU Monitor...")
-        global gpu_monitor
-        gpu_reports_dir = config.logs_dir / "gpu_reports"
-        gpu_reports_dir.mkdir(parents=True, exist_ok=True)
-        gpu_monitor = GPUMonitor(gpu_reports_dir)
-        gpu_monitor.start_monitoring()
-        
-        # Register models that will be loaded
-        gpu_monitor.register_model_load("Faster-Whisper (large-v3)")
-        gpu_monitor.register_model_load("Llama 3.1 8B")
-        gpu_monitor.register_model_load("SpeechBrain ECAPA-TDNN")
-        
-        logger.info("✅ GPU Monitor started successfully")
-        
-        return config, brain, True
-        
-    except Exception as e:
-        user_msg, recovered = handle_error(
-            error=e,
-            context="initialize_application",
-            category=ErrorCategory.CONFIGURATION,
-            severity=ErrorSeverity.CRITICAL,
-            user_message="Failed to start Nexa. Please check configuration.",
-            recovery_suggestion="Verify .env file and system requirements"
-        )
-        logger.critical(f"CRITICAL: {user_msg}")
-        return None, None, False
+    status_update = Signal(str, str)      # (status_text, detail_text)
+    finished_ok = Signal(object, object)  # (config, brain)
+    finished_fail = Signal()
+
+    def run(self):
+        """Run initialization in background thread."""
+        logger = logging.getLogger(__name__)
+        log_section(logger, "NEXA AI ASSISTANT - INITIALIZATION", logging.INFO)
+
+        def update_status(status, detail=""):
+            self.status_update.emit(status, detail)
+
+        try:
+            # Load configuration
+            update_status("Loading configuration...", "Reading settings and environment")
+            logger.info("📋 Loading configuration...")
+            config = Config()
+            logger.info("✅ Configuration loaded successfully")
+
+            # Verify critical paths
+            update_status("Verifying system...", "Checking models and paths")
+            logger.info("🔍 Verifying system requirements...")
+            if not config.verify_setup():
+                logger.error("❌ System verification failed. Check your .env and model paths.")
+                self.finished_fail.emit()
+                return
+
+            logger.info("✅ System verification passed")
+
+            # Initialize Nexa Brain (heavy — loads LLM, STT, TTS models)
+            update_status("Initializing AI Brain...", "Loading LLM, STT, and TTS models")
+            logger.info("🧠 Initializing Nexa Brain...")
+            brain = NexaBrain(config)
+            logger.info("✅ Nexa Brain initialized successfully")
+
+            # Verify LLM model is ready
+            if brain.llm_manager.ollama_prewarmed:
+                update_status("AI model ready!", "Pre-warmed for instant responses")
+                logger.info("🚀 AI model pre-warmed and ready!")
+            else:
+                logger.warning("⚠️ AI model not pre-warmed")
+
+            # Initialize GPU Monitor
+            update_status("Starting GPU Monitor...", "Tracking model memory usage")
+            logger.info("📊 Initializing GPU Monitor...")
+            global gpu_monitor
+            gpu_reports_dir = config.logs_dir / "gpu_reports"
+            gpu_reports_dir.mkdir(parents=True, exist_ok=True)
+            gpu_monitor = GPUMonitor(gpu_reports_dir)
+            gpu_monitor.start_monitoring()
+
+            gpu_monitor.register_model_load("Faster-Whisper (large-v3)")
+            gpu_monitor.register_model_load("Llama 3.1 8B")
+            gpu_monitor.register_model_load("SpeechBrain ECAPA-TDNN")
+            logger.info("✅ GPU Monitor started successfully")
+
+            self.finished_ok.emit(config, brain)
+
+        except Exception as e:
+            user_msg, recovered = handle_error(
+                error=e,
+                context="initialize_application",
+                category=ErrorCategory.CONFIGURATION,
+                severity=ErrorSeverity.CRITICAL,
+                user_message="Failed to start Nexa. Please check configuration.",
+                recovery_suggestion="Verify .env file and system requirements"
+            )
+            logger.critical(f"CRITICAL: {user_msg}")
+            self.finished_fail.emit()
 
 
 def main():
@@ -204,8 +205,38 @@ def main():
         loading_dialog.show()
         QApplication.processEvents()
         
-        # Initialize core components AFTER wizard (so API keys are loaded)
-        config_instance, brain_instance, success = initialize_application(loading_dialog)
+        # ── Run initialization in background thread so spinner keeps spinning ──
+        from PySide6.QtCore import QEventLoop
+        
+        init_worker = InitWorker()
+        init_result = {}  # Mutable container for thread result
+        init_loop = QEventLoop()  # Local event loop — keeps UI responsive
+        
+        def _on_status(text, detail):
+            loading_dialog.set_status(text, detail)
+        
+        def _on_init_ok(config_obj, brain_obj):
+            init_result['config'] = config_obj
+            init_result['brain'] = brain_obj
+            init_result['success'] = True
+            init_loop.quit()
+        
+        def _on_init_fail():
+            init_result['success'] = False
+            init_loop.quit()
+        
+        init_worker.status_update.connect(_on_status)
+        init_worker.finished_ok.connect(_on_init_ok)
+        init_worker.finished_fail.connect(_on_init_fail)
+        
+        init_worker.start()
+        init_loop.exec()  # Spins event loop — spinner keeps animating
+        init_worker.wait()  # Ensure thread fully finished
+        
+        # Retrieve results
+        success = init_result.get('success', False)
+        config_instance = init_result.get('config')
+        brain_instance = init_result.get('brain')
         
         if not success:
             loading_dialog.close_dialog()
