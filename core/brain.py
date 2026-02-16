@@ -3882,8 +3882,15 @@ User request: {user_text}"""
             # Build search query from trigger topics
             search_query = user_text  # Use full text for semantic search
             
+            # Detect broad queries that want ALL info about the user
+            broad_queries = ['about me', 'what do you know', 'everything you know', 
+                           'what do you remember', 'do you remember me', 'you know me',
+                           'you know about me', 'tell me about me']
+            is_broad_query = any(bq in user_lower for bq in broad_queries)
+            fact_limit = 10 if is_broad_query else 5
+            
             # Get relevant facts from memory
-            result = self.context_manager.recall_knowledge_answer(search_query, limit=5)
+            result = self.context_manager.recall_knowledge_answer(search_query, limit=fact_limit)
             
             if not result.get('found'):
                 # Also try individual trigger topics (only meaningful ones)
@@ -3891,8 +3898,22 @@ User request: {user_text}"""
                     # Skip short/generic topics that won't yield useful results
                     if len(topic) < 4:
                         continue
-                    result = self.context_manager.recall_knowledge_answer(topic, limit=3)
+                    result = self.context_manager.recall_knowledge_answer(topic, limit=fact_limit)
                     if result.get('found'):
+                        break
+            
+            # For broad queries, also try a generic "user" search to get more facts
+            if is_broad_query and result.get('found'):
+                existing_facts = set(result.get('facts', []))
+                # Try additional broad searches to fill out the response
+                for extra_query in ['user personal', 'name birthday', 'family friend', 'favorite preference']:
+                    extra_result = self.context_manager.recall_knowledge_answer(extra_query, limit=5)
+                    if extra_result.get('found'):
+                        for fact in extra_result.get('facts', []):
+                            if fact not in existing_facts:
+                                existing_facts.add(fact)
+                                result.setdefault('facts', []).append(fact)
+                    if len(result.get('facts', [])) >= fact_limit:
                         break
             
             if not result.get('found'):
@@ -3907,7 +3928,7 @@ User request: {user_text}"""
             memory_text += "🧠 MEMORY CONTEXT (USE THIS INFO TO ANSWER!):\n"
             memory_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             memory_text += "I remember the following about the user:\n"
-            for fact in facts[:5]:  # Limit to 5 facts
+            for fact in facts[:fact_limit]:  # Use dynamic limit (5 for specific, 10 for broad)
                 memory_text += f"• {fact}\n"
             memory_text += "\n⚠️ USE THE ABOVE FACTS to answer the user's question naturally!\n"
             memory_text += "DO NOT say 'I don't know' - the information is RIGHT HERE!\n"

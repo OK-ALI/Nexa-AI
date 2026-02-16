@@ -132,6 +132,7 @@ class ThinkingFeedback:
             "how are you", "who are you", "what are you", "what's your name",
             "what can you do", "are you there", "you okay", "how do you feel",
             "tell me about yourself", "what do you think", "do you like",
+            "who made you", "who created you",
             # Casual chat
             "thank you", "thanks", "okay", "ok", "sure", "yes", "no", "maybe",
             "never mind", "nevermind", "forget it", "cool", "nice", "great",
@@ -140,18 +141,36 @@ class ThinkingFeedback:
             # Emotional/personal
             "i love you", "i like you", "you're cool", "you're awesome",
             "i'm bored", "i'm tired", "i'm happy", "i'm sad", "i'm angry",
-            "tell me a joke", "make me laugh", "cheer me up"
+            "tell me a joke", "make me laugh", "cheer me up",
+            # Memory/personal queries (fast — no acknowledgement needed)
+            "what's my name", "who am i", "my name", "about me",
+            "what do you know", "do you remember", "who is",
+            "tell me about", "my friend", "my father", "my mother",
+            "my brother", "my sister", "my best friend",
+            "favorite", "favourite", "remember",
+        ]
+        
+        # Quick info queries — these return instantly, no feedback needed
+        self.quick_info_patterns = [
+            "what time", "what's the time", "current time", "the time",
+            "what date", "what's the date", "today's date", "the date",
+            "battery", "battery level", "battery status", "how much battery",
+            "what's my battery", "battery percentage",
+            "volume", "current volume", "what's the volume",
+            "brightness", "current brightness", "what's the brightness",
+            "system info", "system information", "cpu", "ram", "gpu",
+            "wifi status", "wifi", "am i connected",
         ]
     
     def _is_conversation(self, user_input: str) -> bool:
         """
-        Check if this is casual conversation (no acknowledgement needed).
+        Check if this is casual conversation or quick info query (no acknowledgement needed).
         
         Args:
             user_input: User's input text
             
         Returns:
-            True if this is conversation, False if it's a task
+            True if this is conversation/quick query, False if it's a task needing feedback
         """
         input_lower = user_input.lower().strip()
         
@@ -161,6 +180,11 @@ class ThinkingFeedback:
         # Check if it matches conversation patterns
         for pattern in self.conversation_patterns:
             if pattern in input_lower or input_lower.startswith(pattern):
+                return True
+        
+        # Check if it's a quick info query (instant response, no feedback needed)
+        for pattern in self.quick_info_patterns:
+            if pattern in input_lower:
                 return True
         
         # Very short inputs without task keywords = conversation
