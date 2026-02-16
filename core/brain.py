@@ -3814,6 +3814,10 @@ User request: {user_text}"""
                 # Questions about people/self
                 'who is', 'who\'s', 'do you know', 'tell me about', 'what about',
                 'remember', 'what do you know', 'know about',
+                # Personal identity queries (critical for "what's my name?" etc.)
+                'my name', 'who am i', 'about me', 'my age', 'you know me',
+                'you know about me', 'what\'s my', 'do you remember me',
+                'what do you remember', 'my number', 'my email', 'my address',
                 # Creator
                 'created', 'creator', 'made you', 'who made',
             ]

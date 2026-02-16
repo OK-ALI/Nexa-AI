@@ -674,9 +674,9 @@ decrease_indent() - Remove indent
 clear_formatting() - Clear format
 
 === SMART MEMORY ===
-remember_this(fact) - Store a fact/preference
+remember_this(fact) - Store a fact/preference. ⚠️ CRITICAL: fact MUST be the FULL contextual statement, e.g. "User's name is Ali" NOT just "Ali", "User's father is Vasim" NOT just "Vasim"
 forget_about(topic) - Forget memories about topic
-what_do_you_know(topic) - Recall memories
+what_do_you_know(topic) - Recall memories about a person/topic. Use ONLY when no MEMORY FACTS section exists above. If MEMORY FACTS are already provided above, answer from them directly!
 get_memory_stats() - Memory statistics
 show_memory_panel() - Open memory GUI
 
@@ -778,23 +778,37 @@ exit_nexa() - Close Nexa"""
             
             # FIX #2: Extract MEMORY CONTEXT from brain prompt (critical for personal knowledge)
             # Brain's _prefetch_memory_context() injects facts between markers — preserve them
+            # Memory block format:
+            #   ━━━━━━━━ (opening marker)
+            #   🧠 MEMORY CONTEXT (USE THIS INFO TO ANSWER!):
+            #   ━━━━━━━━ (middle decorative marker)  ← facts are AFTER this
+            #   • fact1
+            #   • fact2
+            #   ━━━━━━━━ (closing marker)
             memory_context = ""
             if "MEMORY CONTEXT" in prompt:
                 try:
-                    # The memory block is between two ━━━ marker lines
                     marker = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     parts = prompt.split("🧠 MEMORY CONTEXT")
                     if len(parts) >= 2:
                         mem_section = parts[1]
-                        # Find the closing marker
-                        if marker in mem_section:
-                            mem_section = mem_section.split(marker)[0]
+                        # Split by marker — facts are in chunk [1] (after middle marker, before closing)
+                        marker_chunks = mem_section.split(marker)
+                        # chunk[0] = header text "(USE THIS INFO...)"
+                        # chunk[1] = the actual facts section with • bullets
+                        # chunk[2+] = rest of prompt after closing marker
+                        if len(marker_chunks) >= 2:
+                            facts_section = marker_chunks[1]
+                        else:
+                            facts_section = mem_section
                         # Extract just the facts (lines starting with •)
-                        mem_lines = [l.strip() for l in mem_section.split('\n') if l.strip().startswith('•')]
+                        mem_lines = [l.strip() for l in facts_section.split('\n') if l.strip().startswith('•')]
                         if mem_lines:
-                            memory_context = "\n\nMEMORY (facts I know about the user — use these to answer naturally):\n"
+                            memory_context = "\n\n⚠️ MEMORY FACTS (I already know this — answer DIRECTLY from these):\n"
                             memory_context += "\n".join(mem_lines)
-                            memory_context += "\nUse the above facts to answer. Do NOT say 'I don't know' if the answer is here."
+                            memory_context += "\n\n🚫 DO NOT call what_do_you_know — the facts are RIGHT HERE above."
+                            memory_context += "\n🚫 DO NOT say 'I don't know' or 'I don't have information' — USE the facts above to answer."
+                            memory_context += "\nAnswer naturally using these facts as if you personally remember them."
                             logger.info(f"🧠 Memory context injected: {len(mem_lines)} facts")
                 except Exception as e:
                     logger.warning(f"Memory context extraction failed: {e}")
@@ -868,10 +882,17 @@ User: "search for cats"
 User: "search the web for best laptops 2025"
 {{"function_call": {{"name": "search_web", "parameters": {{"query": "best laptops 2025"}}}}, "response": "Let me search that for you!"}}
 
+User: "remember that my name is Ali"
+{{"function_call": {{"name": "remember_this", "parameters": {{"fact": "User's name is Ali"}}}}, "response": "Got it, I'll remember your name!"}}
+
+User: "remember my father's name is Vasim"
+{{"function_call": {{"name": "remember_this", "parameters": {{"fact": "User's father's name is Vasim"}}}}, "response": "I'll remember that!"}}
+
 AVAILABLE FUNCTIONS:
 {self._get_dynamic_function_catalog()}
 
-🚫 DO NOT USE: browse_web, google_search (use search_web instead){memory_context}{history_context}{pending_context}
+🚫 DO NOT USE: browse_web, google_search (use search_web instead)
+🚫 NEVER invent function names! Only use functions listed above. If unsure, respond conversationally.{memory_context}{history_context}{pending_context}
 
 User: {user_request}
 

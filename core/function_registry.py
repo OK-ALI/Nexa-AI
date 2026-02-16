@@ -1149,8 +1149,8 @@ class FunctionRegistry:
         self.register(
             "remember_this",
             self._remember_this,
-            "Store a fact or preference about the user. Voice commands: 'remember that...', 'note that...'",
-            {"fact": "The fact to remember (e.g., 'I prefer dark theme')"}
+            "Store a fact or preference about the user. IMPORTANT: The 'fact' parameter MUST include FULL CONTEXT — e.g. 'User's name is Ali' NOT just 'Ali', 'User's favorite color is blue' NOT just 'blue'. Voice commands: 'remember that...', 'note that...'",
+            {"fact": "The FULL contextual fact to remember (e.g., 'User's name is Ali', 'User's father is Vasim', 'User prefers dark theme') — NEVER just a single word!"}
         )
         
         self.register(
