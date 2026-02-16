@@ -599,31 +599,49 @@ class IntentState:
         """
         Check if text appears to be a new, unrelated command.
         
-        Heuristics:
-        - Contains typical command words
-        - Starts with action verbs
-        - Is a question (what, how, when)
+        Context-aware: considers the pending intent type to avoid
+        false positives (e.g., "Play Bohemian Rhapsody" is NOT a new
+        command when we're waiting for a song name).
         """
         text_lower = text.lower().strip()
+        words = text_lower.split()
+        if not words:
+            return False
         
-        # Command verbs that indicate new command
+        first_word = words[0]
+        
+        # Map of intent types to their "expected" leading verbs
+        # If the first word matches the pending intent's verb, it's likely an answer
+        intent_verb_map = {
+            'play_music': ['play'],
+            'open_application': ['open', 'launch', 'start'],
+            'launch_game': ['launch', 'play', 'start', 'open'],
+            'search_web': ['search', 'find', 'look'],
+            'set_volume': ['set'],
+            'set_brightness': ['set'],
+            'navigate_to': ['go', 'open', 'navigate'],
+            'share_file': ['share'],
+        }
+        
+        # If the first word is a verb that matches what we're waiting for, it's an answer
+        if self._pending:
+            expected_verbs = intent_verb_map.get(self._pending.intent, [])
+            if first_word in expected_verbs:
+                return False  # Likely an answer, not a new command
+        
+        # Command verbs that indicate a genuinely new command
         command_verbs = [
             'open', 'close', 'launch', 'start', 'stop', 'set', 'get',
-            'show', 'tell', 'what', 'how', 'when', 'where', 'search',
-            'play', 'pause', 'skip', 'check', 'find'
+            'show', 'tell', 'search', 'pause', 'skip', 'check', 'find'
         ]
         
-        # If it starts with a command verb, it's likely a new command
-        first_word = text_lower.split()[0] if text_lower.split() else ""
+        # Only flag as new command if it starts with a command verb AND is complex
+        if first_word in command_verbs and len(words) > 4:
+            return True
         
-        if first_word in command_verbs:
-            # But check if it might be an answer (e.g., "Play 'Bohemian Rhapsody'")
-            # For now, assume it's a new command if it's complex enough
-            if len(text.split()) > 3:
-                return True
-        
-        # If it's a question, it's a new command
-        if any(text_lower.startswith(q) for q in ['what', 'how', 'when', 'where', 'why', 'who']):
+        # Questions are new commands only if they're clearly unrelated (5+ words)
+        question_words = ['what', 'how', 'when', 'where', 'why', 'who']
+        if first_word in question_words and len(words) >= 4:
             return True
         
         return False

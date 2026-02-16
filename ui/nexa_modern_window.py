@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve, QMimeData
+from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve, QMimeData, QRect
 from PySide6.QtGui import QFont, QMouseEvent, QColor, QDrag
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
@@ -212,6 +212,16 @@ class NexaModernWindow(QMainWindow):
         self.mode_btn.clicked.connect(self._toggle_mode)
         layout.addWidget(self.mode_btn)
         
+        # Topbar button zone — sidebar buttons can be dragged here for quick access
+        self._topbar_container = QWidget()
+        self._topbar_container.setStyleSheet("background: transparent;")
+        self._topbar_container.setFixedHeight(34)
+        self._topbar_layout = QHBoxLayout(self._topbar_container)
+        self._topbar_layout.setContentsMargins(6, 0, 0, 0)
+        self._topbar_layout.setSpacing(4)
+        self._topbar_layout.addStretch()  # Start with stretch so buttons push left
+        layout.addWidget(self._topbar_container)
+        
         # Music indicator (hidden by default, shows when music plays)
         self.music_indicator = MusicIndicatorWidget()
         layout.addWidget(self.music_indicator)
@@ -256,7 +266,8 @@ class NexaModernWindow(QMainWindow):
         return controls
     
     def _create_sidebar(self) -> QWidget:
-        """Create vertical sidebar with drag-and-drop reorderable feature toggle buttons."""
+        """Create vertical sidebar with drag-and-drop reorderable feature toggle buttons.
+        Buttons can also be dragged to the topbar (right of mode button) for quick access."""
         sidebar = QWidget()
         sidebar.setObjectName("nexaSidebar")
         sidebar.setStyleSheet("background: transparent;")
@@ -268,6 +279,8 @@ class NexaModernWindow(QMainWindow):
         
         icon_size = 28  # larger icons for sidebar buttons
         btn_size = 42   # larger hit area
+        topbar_icon_size = 20  # smaller icons for topbar
+        topbar_btn_size = 30   # smaller buttons for topbar
         
         # Define all sidebar buttons with their IDs
         self._sidebar_btn_defs = {
@@ -293,19 +306,22 @@ class NexaModernWindow(QMainWindow):
             },
         }
         
-        # Load saved button order from preferences
-        button_order = self._load_sidebar_order()
+        # Load saved button placement from preferences
+        sidebar_order, topbar_order = self._load_sidebar_order()
         
-        # Create buttons in saved order
-        self._sidebar_buttons = {}  # id -> QPushButton
+        # Create buttons in saved order for both zones
+        self._sidebar_buttons = {}  # id -> QPushButton (ALL buttons, regardless of zone)
         self._sidebar_layout = layout
         self._sidebar_widget = sidebar
         self._sidebar_btn_size = btn_size
         self._sidebar_icon_size = icon_size
+        self._topbar_btn_size = topbar_btn_size
+        self._topbar_icon_size = topbar_icon_size
         self._drag_source = None
         self._drag_start_pos = None
         
-        for btn_id in button_order:
+        # Create sidebar buttons (vertical, left side)
+        for btn_id in sidebar_order:
             if btn_id not in self._sidebar_btn_defs:
                 continue
             btn_def = self._sidebar_btn_defs[btn_id]
@@ -316,13 +332,37 @@ class NexaModernWindow(QMainWindow):
             btn.setToolTip(btn_def['tooltip'])
             btn.clicked.connect(btn_def['callback'])
             btn.setProperty("sidebar_id", btn_id)
+            btn.setProperty("zone", "sidebar")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            
-            # Enable drag support
             btn.installEventFilter(self)
-            
             layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
             self._sidebar_buttons[btn_id] = btn
+        
+        # Create topbar buttons (horizontal, right of mode button)
+        # Remove the initial stretch, add buttons, then re-add stretch
+        if topbar_order:
+            # Clear the placeholder stretch
+            while self._topbar_layout.count():
+                item = self._topbar_layout.takeAt(0)
+            
+            for btn_id in topbar_order:
+                if btn_id not in self._sidebar_btn_defs:
+                    continue
+                btn_def = self._sidebar_btn_defs[btn_id]
+                btn = QPushButton()
+                btn.setIcon(btn_def['icon']())
+                btn.setIconSize(QSize(topbar_icon_size, topbar_icon_size))
+                btn.setFixedSize(topbar_btn_size, topbar_btn_size)
+                btn.setToolTip(btn_def['tooltip'])
+                btn.clicked.connect(btn_def['callback'])
+                btn.setProperty("sidebar_id", btn_id)
+                btn.setProperty("zone", "topbar")
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.installEventFilter(self)
+                self._topbar_layout.addWidget(btn)
+                self._sidebar_buttons[btn_id] = btn
+            
+            self._topbar_layout.addStretch()
         
         # Store named references for theme updates
         self.theme_btn = self._sidebar_buttons.get('theme')
@@ -334,25 +374,32 @@ class NexaModernWindow(QMainWindow):
         
         return sidebar
     
-    def _load_sidebar_order(self) -> list:
-        """Load sidebar button order from ui_preferences.json."""
+    def _load_sidebar_order(self) -> tuple:
+        """Load sidebar and topbar button order from ui_preferences.json.
+        
+        Returns:
+            Tuple of (sidebar_order, topbar_order) lists.
+        """
         default_order = ['theme', 'companion', 'memory', 'music']
         try:
             prefs_path = Path("config/ui_preferences.json")
             if prefs_path.exists():
                 with open(prefs_path, 'r') as f:
                     prefs = json.load(f)
-                saved = prefs.get('sidebar_order', None)
-                if saved and isinstance(saved, list):
-                    # Validate - make sure all buttons are present
-                    if set(saved) == set(default_order):
-                        return saved
+                saved_sidebar = prefs.get('sidebar_order', None)
+                saved_topbar = prefs.get('topbar_order', [])
+                
+                if saved_sidebar and isinstance(saved_sidebar, list):
+                    # Validate - make sure all buttons are accounted for
+                    all_buttons = set(saved_sidebar) | set(saved_topbar)
+                    if all_buttons == set(default_order):
+                        return saved_sidebar, saved_topbar
         except Exception as e:
             logger.debug(f"Could not load sidebar order: {e}")
-        return default_order
+        return default_order, []
     
     def _save_sidebar_order(self):
-        """Save current sidebar button order to ui_preferences.json."""
+        """Save current sidebar and topbar button order to ui_preferences.json."""
         try:
             prefs_path = Path("config/ui_preferences.json")
             prefs = {}
@@ -360,19 +407,29 @@ class NexaModernWindow(QMainWindow):
                 with open(prefs_path, 'r') as f:
                     prefs = json.load(f)
             
-            # Build order from layout
-            order = []
+            # Build sidebar order from layout
+            sidebar_order = []
             for i in range(self._sidebar_layout.count()):
                 item = self._sidebar_layout.itemAt(i)
                 if item and item.widget():
                     btn_id = item.widget().property("sidebar_id")
                     if btn_id:
-                        order.append(btn_id)
+                        sidebar_order.append(btn_id)
             
-            prefs['sidebar_order'] = order
+            # Build topbar order from layout
+            topbar_order = []
+            for i in range(self._topbar_layout.count()):
+                item = self._topbar_layout.itemAt(i)
+                if item and item.widget():
+                    btn_id = item.widget().property("sidebar_id")
+                    if btn_id:
+                        topbar_order.append(btn_id)
+            
+            prefs['sidebar_order'] = sidebar_order
+            prefs['topbar_order'] = topbar_order
             with open(prefs_path, 'w') as f:
                 json.dump(prefs, f, indent=2)
-            logger.debug(f"💾 Sidebar order saved: {order}")
+            logger.debug(f"💾 Button layout saved — sidebar: {sidebar_order}, topbar: {topbar_order}")
         except Exception as e:
             logger.error(f"Failed to save sidebar order: {e}")
     
@@ -444,7 +501,7 @@ class NexaModernWindow(QMainWindow):
         super().dragMoveEvent(event)
     
     def dropEvent(self, event):
-        """Handle drop to reorder sidebar buttons."""
+        """Handle drop to reorder sidebar/topbar buttons with cross-zone support."""
         if not event.mimeData().hasText():
             super().dropEvent(event)
             return
@@ -454,63 +511,135 @@ class NexaModernWindow(QMainWindow):
             super().dropEvent(event)
             return
         
-        # Find which button slot we're closest to
         drop_pos = event.position().toPoint()
-        sidebar_pos = self._sidebar_widget.mapFrom(self, drop_pos)
         
-        # Determine target index based on Y position
-        target_idx = 0
-        btn_count = len(self._sidebar_buttons)
-        for i in range(self._sidebar_layout.count()):
-            item = self._sidebar_layout.itemAt(i)
-            if item and item.widget() and item.widget().property("sidebar_id"):
-                widget_center = item.widget().y() + item.widget().height() // 2
-                if sidebar_pos.y() > widget_center:
-                    target_idx = min(i + 1, btn_count - 1)
+        # Determine target zone: topbar or sidebar
+        topbar_rect = self._topbar_container.geometry()
+        topbar_global = self._topbar_container.mapTo(self, topbar_rect.topLeft())
+        topbar_mapped = QRect(topbar_global, topbar_rect.size())
         
-        # Get current order
-        current_order = []
-        for i in range(self._sidebar_layout.count()):
-            item = self._sidebar_layout.itemAt(i)
-            if item and item.widget():
-                bid = item.widget().property("sidebar_id")
-                if bid:
-                    current_order.append(bid)
+        sidebar_rect = self._sidebar_widget.geometry()
+        sidebar_global = self._sidebar_widget.mapTo(self, sidebar_rect.topLeft())
+        sidebar_mapped = QRect(sidebar_global, sidebar_rect.size())
         
-        if source_id not in current_order:
-            return
+        target_zone = None
+        if topbar_mapped.contains(drop_pos) or drop_pos.y() < sidebar_mapped.top():
+            target_zone = 'topbar'
+        else:
+            target_zone = 'sidebar'
         
-        # Remove source and insert at target
-        old_idx = current_order.index(source_id)
-        current_order.pop(old_idx)
-        if target_idx > old_idx:
-            target_idx = min(target_idx - 1, len(current_order))
-        target_idx = max(0, min(target_idx, len(current_order)))
-        current_order.insert(target_idx, source_id)
+        # Build current orders for both zones
+        sidebar_order = self._get_zone_order('sidebar')
+        topbar_order = self._get_zone_order('topbar')
         
-        # Rebuild sidebar layout with new order
-        self._rebuild_sidebar(current_order)
+        # Remove source from its current zone
+        if source_id in sidebar_order:
+            sidebar_order.remove(source_id)
+        if source_id in topbar_order:
+            topbar_order.remove(source_id)
+        
+        if target_zone == 'topbar':
+            # Insert at drop position in topbar
+            topbar_pos = self._topbar_container.mapFrom(self, drop_pos)
+            target_idx = len(topbar_order)
+            for i in range(self._topbar_layout.count()):
+                item = self._topbar_layout.itemAt(i)
+                if item and item.widget() and item.widget().property("sidebar_id"):
+                    widget_center = item.widget().x() + item.widget().width() // 2
+                    if topbar_pos.x() < widget_center:
+                        # Count how many real buttons are before this
+                        target_idx = sum(
+                            1 for j in range(i) 
+                            if self._topbar_layout.itemAt(j) and self._topbar_layout.itemAt(j).widget() 
+                            and self._topbar_layout.itemAt(j).widget().property("sidebar_id")
+                        )
+                        break
+            target_idx = max(0, min(target_idx, len(topbar_order)))
+            topbar_order.insert(target_idx, source_id)
+        else:
+            # Insert at drop position in sidebar  
+            sidebar_pos = self._sidebar_widget.mapFrom(self, drop_pos)
+            target_idx = len(sidebar_order)
+            for i in range(self._sidebar_layout.count()):
+                item = self._sidebar_layout.itemAt(i)
+                if item and item.widget() and item.widget().property("sidebar_id"):
+                    widget_center = item.widget().y() + item.widget().height() // 2
+                    if sidebar_pos.y() < widget_center:
+                        target_idx = sum(
+                            1 for j in range(i)
+                            if self._sidebar_layout.itemAt(j) and self._sidebar_layout.itemAt(j).widget()
+                            and self._sidebar_layout.itemAt(j).widget().property("sidebar_id")
+                        )
+                        break
+            target_idx = max(0, min(target_idx, len(sidebar_order)))
+            sidebar_order.insert(target_idx, source_id)
+        
+        # Rebuild both zones
+        self._rebuild_both_zones(sidebar_order, topbar_order)
         
         event.acceptProposedAction()
-        logger.info(f"🔀 Sidebar reordered: {current_order}")
+        logger.info(f"🔀 Layout updated — sidebar: {sidebar_order}, topbar: {topbar_order}")
     
-    def _rebuild_sidebar(self, order: list):
-        """Rebuild sidebar buttons in the given order."""
-        # Remove all widgets from layout (but don't delete them)
+    def _get_zone_order(self, zone: str) -> list:
+        """Get current button order for a zone."""
+        layout = self._sidebar_layout if zone == 'sidebar' else self._topbar_layout
+        order = []
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item and item.widget():
+                btn_id = item.widget().property("sidebar_id")
+                if btn_id:
+                    order.append(btn_id)
+        return order
+    
+    def _rebuild_both_zones(self, sidebar_order: list, topbar_order: list):
+        """Rebuild both sidebar and topbar layouts with given orders."""
+        # Clear sidebar layout
         while self._sidebar_layout.count():
-            item = self._sidebar_layout.takeAt(0)
-            # Don't delete - we reuse buttons
+            self._sidebar_layout.takeAt(0)
         
-        # Re-add buttons in new order
-        for btn_id in order:
+        # Clear topbar layout  
+        while self._topbar_layout.count():
+            self._topbar_layout.takeAt(0)
+        
+        icon_size = self._sidebar_icon_size
+        btn_size = self._sidebar_btn_size
+        topbar_icon_size = self._topbar_icon_size
+        topbar_btn_size = self._topbar_btn_size
+        
+        # Rebuild sidebar buttons
+        for btn_id in sidebar_order:
             if btn_id in self._sidebar_buttons:
                 btn = self._sidebar_buttons[btn_id]
+                btn.setFixedSize(btn_size, btn_size)
+                btn.setIconSize(QSize(icon_size, icon_size))
+                # Refresh icon at correct size
+                if btn_id in self._sidebar_btn_defs:
+                    btn.setIcon(self._sidebar_btn_defs[btn_id]['icon']())
+                btn.setProperty("zone", "sidebar")
                 self._sidebar_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
-        
         self._sidebar_layout.addStretch()
         
-        # Save new order
+        # Rebuild topbar buttons
+        for btn_id in topbar_order:
+            if btn_id in self._sidebar_buttons:
+                btn = self._sidebar_buttons[btn_id]
+                btn.setFixedSize(topbar_btn_size, topbar_btn_size)
+                btn.setIconSize(QSize(topbar_icon_size, topbar_icon_size))
+                # Refresh icon at smaller size
+                if btn_id in self._sidebar_btn_defs:
+                    btn.setIcon(self._sidebar_btn_defs[btn_id]['icon']())
+                btn.setProperty("zone", "topbar")
+                self._topbar_layout.addWidget(btn)
+        self._topbar_layout.addStretch()
+        
+        # Save new layout
         self._save_sidebar_order()
+    
+    def _rebuild_sidebar(self, order: list):
+        """Rebuild sidebar buttons in the given order (legacy compat — also rebuilds topbar)."""
+        topbar_order = self._get_zone_order('topbar')
+        self._rebuild_both_zones(order, topbar_order)
     
     def _create_title_section(self) -> QWidget:
         """Create NEXA title and AI ASSISTANT subtitle with static glow."""
@@ -1315,7 +1444,7 @@ class NexaModernWindow(QMainWindow):
             }}
         """)
         
-        # Sidebar feature toggle buttons (theme, companion, memory, music)
+        # Sidebar/topbar feature toggle buttons (theme, companion, memory, music)
         sidebar_btn_style = f"""
             QPushButton {{
                 background: {tm.get_color('buttons', 'background')};
@@ -1328,10 +1457,9 @@ class NexaModernWindow(QMainWindow):
                 border: 1px solid {tm.get_color('panels', 'border_accent', default='rgba(0, 212, 255, 0.3)')};
             }}
         """
-        self.theme_btn.setStyleSheet(sidebar_btn_style)
-        self.pet_btn.setStyleSheet(sidebar_btn_style)
-        self.memory_btn.setStyleSheet(sidebar_btn_style)
-        self.music_btn.setStyleSheet(sidebar_btn_style)
+        # Apply to ALL sidebar buttons (both sidebar and topbar zones)
+        for btn in self._sidebar_buttons.values():
+            btn.setStyleSheet(sidebar_btn_style)
         
         # Window control buttons
         window_btn_style = f"""

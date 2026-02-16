@@ -776,6 +776,43 @@ exit_nexa() - Close Nexa"""
                 if history_lines:
                     history_context = "\n\nRecent conversation:\n" + "\n".join(history_lines[-6:])
             
+            # FIX #2: Extract MEMORY CONTEXT from brain prompt (critical for personal knowledge)
+            # Brain's _prefetch_memory_context() injects facts between markers — preserve them
+            memory_context = ""
+            if "MEMORY CONTEXT" in prompt:
+                try:
+                    # The memory block is between two ━━━ marker lines
+                    marker = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    parts = prompt.split("🧠 MEMORY CONTEXT")
+                    if len(parts) >= 2:
+                        mem_section = parts[1]
+                        # Find the closing marker
+                        if marker in mem_section:
+                            mem_section = mem_section.split(marker)[0]
+                        # Extract just the facts (lines starting with •)
+                        mem_lines = [l.strip() for l in mem_section.split('\n') if l.strip().startswith('•')]
+                        if mem_lines:
+                            memory_context = "\n\nMEMORY (facts I know about the user — use these to answer naturally):\n"
+                            memory_context += "\n".join(mem_lines)
+                            memory_context += "\nUse the above facts to answer. Do NOT say 'I don't know' if the answer is here."
+                            logger.info(f"🧠 Memory context injected: {len(mem_lines)} facts")
+                except Exception as e:
+                    logger.warning(f"Memory context extraction failed: {e}")
+            
+            # FIX #3: Extract PENDING ACTION context from brain prompt
+            pending_context = ""
+            if "PENDING ACTION" in prompt:
+                try:
+                    pending_section = prompt.split("PENDING ACTION")[1]
+                    # Take until next section marker or double newline
+                    for end_marker in ["━━━", "AVAILABLE FUNCTIONS", "\n\n\n"]:
+                        if end_marker in pending_section:
+                            pending_section = pending_section.split(end_marker)[0]
+                            break
+                    pending_context = "\n\nPENDING ACTION" + pending_section.strip()
+                except Exception:
+                    pass
+            
             # Llama 3.1 8B OPTIMIZED prompt - Superior reasoning, native function calling, excellent NLP
             # Llama 3.1 is specifically trained for tool use and instruction following
             llama_prompt = f"""You are Nexa, a friendly AI assistant created by Ali Adil Waseem. Respond in JSON format ONLY.
@@ -834,7 +871,7 @@ User: "search the web for best laptops 2025"
 AVAILABLE FUNCTIONS:
 {self._get_dynamic_function_catalog()}
 
-🚫 DO NOT USE: browse_web, google_search (use search_web instead){history_context}
+🚫 DO NOT USE: browse_web, google_search (use search_web instead){memory_context}{history_context}{pending_context}
 
 User: {user_request}
 

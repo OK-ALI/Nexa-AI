@@ -4282,8 +4282,92 @@ User request: {user_text}"""
                 # This will be processed by normal LLM flow with full context
                 return ("__PROACTIVE_CONTEXT__", contextualized_input)
             
-            # Unknown intent type - clear and let normal processing handle it
+            # Handle open_application pending intent
+            if intent_type == 'open_application':
+                clear_pending()
+                result = self.executor.open_application(app_name=user_text)
+                logger.info(f"📂 Opened application '{user_text}': {result}")
+                return result
+            
+            # Handle launch_game pending intent
+            if intent_type == 'launch_game':
+                clear_pending()
+                result = self.executor.launch_game(game_name=user_text)
+                logger.info(f"🎮 Launched game '{user_text}': {result}")
+                return result
+            
+            # Handle set_volume pending intent
+            if intent_type == 'set_volume':
+                clear_pending()
+                try:
+                    numbers = re.findall(r'\d+', user_text)
+                    if numbers:
+                        level = max(0, min(100, int(numbers[0])))
+                        result = self.executor.set_volume(level=level)
+                    else:
+                        result = "Please provide a number between 0 and 100."
+                except Exception:
+                    result = "Please provide a valid number for the volume level."
+                logger.info(f"🔊 Set volume: {result}")
+                return result
+            
+            # Handle set_brightness pending intent
+            if intent_type == 'set_brightness':
+                clear_pending()
+                try:
+                    numbers = re.findall(r'\d+', user_text)
+                    if numbers:
+                        level = max(0, min(100, int(numbers[0])))
+                        result = self.executor.set_brightness(level=level)
+                    else:
+                        result = "Please provide a number between 0 and 100."
+                except Exception:
+                    result = "Please provide a valid number for the brightness level."
+                logger.info(f"🔆 Set brightness: {result}")
+                return result
+            
+            # Handle search_web pending intent
+            if intent_type == 'search_web':
+                clear_pending()
+                result = self.executor.search_web(query=user_text)
+                logger.info(f"🔍 Web search '{user_text}': {result}")
+                return result
+            
+            # Handle share_file pending intent (multi-field: file_path + platform)
+            if intent_type == 'share_file':
+                pending_data = pending_intent.collected_data if pending_intent else {}
+                if 'file_path' not in pending_data:
+                    # User is providing the file path — now ask for platform
+                    if hasattr(self.context_manager, 'set_pending_intent'):
+                        self.context_manager.set_pending_intent(
+                            intent='share_file',
+                            data_needed='platform',
+                            collected_data={'file_path': user_text}
+                        )
+                    return "Where would you like to share it? (e.g., email, clipboard, nearby)"
+                else:
+                    # User is providing the platform — execute
+                    clear_pending()
+                    result = self.executor.share_file(file_path=pending_data.get('file_path', ''))
+                    logger.info(f"📤 Share file: {result}")
+                    return result
+            
+            # Handle navigate_to — pass to LLM with URL context
+            if intent_type == 'navigate_to':
+                clear_pending()
+                logger.info(f"🌐 Navigate to '{user_text}' — delegating to LLM")
+                return None  # Let normal LLM processing handle with context
+            
+            # Handle send_email / set_reminder — not yet implemented
+            if intent_type in ('send_email', 'set_reminder'):
+                clear_pending()
+                feature_name = intent_type.replace('_', ' ')
+                logger.info(f"⚠️ {feature_name} not implemented yet")
+                return f"Sorry, {feature_name} isn't available yet. It's coming in a future update!"
+            
+            # Fallback: unknown intent type — clear and let normal processing handle it
             logger.warning(f"⚠️ Unknown pending intent type: {intent_type}")
+            clear_pending()
             return None
             
         except Exception as e:
