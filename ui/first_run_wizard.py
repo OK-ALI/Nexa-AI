@@ -346,7 +346,7 @@ class VoiceNamePage(QWizardPage):
         """Perform actual voice capture."""
         try:
             # Try to import and use the listener
-            from core.listener import Listener
+            from core.interface.voice_listener import Listener
             
             # Create a temporary listener for name capture
             temp_listener = Listener()

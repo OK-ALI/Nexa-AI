@@ -33,6 +33,8 @@ class SuggestionType(Enum):
     GREETING = "greeting"                   # Time-appropriate greeting
     # ACTION-ORIENTED SUGGESTIONS (NEXA offers to DO something)
     PLAY_MUSIC = "play_music"               # Offer to play music
+    PLAY_YOUTUBE = "play_youtube"           # Suggest watching something on YouTube
+    WATCH_MOVIE = "watch_movie"             # Suggest watching a local movie
     TELL_JOKE = "tell_joke"                 # Offer to lighten the mood
     FUN_FACT = "fun_fact"                   # Share an interesting fact
     TIME_UPDATE = "time_update"             # Tell the current time contextually
@@ -128,6 +130,8 @@ class ProactiveEngine:
             SuggestionType.GREETING: 14400.0,         # 4 hours
             # Action-oriented suggestions (shorter cooldowns for variety)
             SuggestionType.PLAY_MUSIC: 900.0,         # 15 min (more frequent - most useful)
+            SuggestionType.PLAY_YOUTUBE: 1200.0,      # 20 min
+            SuggestionType.WATCH_MOVIE: 2700.0,       # 45 min
             SuggestionType.TELL_JOKE: 1800.0,         # 30 min
             SuggestionType.FUN_FACT: 1200.0,          # 20 min
             SuggestionType.TIME_UPDATE: 3600.0,       # 1 hour
@@ -279,6 +283,20 @@ Afternoon: focus, instrumental
 Evening: relaxing, chill
 Example tone: "How about I put on some chill evening music?"
 """,
+            SuggestionType.PLAY_YOUTUBE: """
+Suggest watching something interesting or entertaining on YouTube.
+Base the suggestion on time of day and mood. Be specific about a genre or type.
+Evening/Night: relaxing videos, documentaries, music videos, interesting content
+Afternoon: short entertaining clips, trending topics
+Example tone: "Wanna watch something interesting on YouTube? I could put on a cool documentary!"
+""",
+            SuggestionType.WATCH_MOVIE: """
+Suggest watching a movie from the user's local movie library.
+Be casual and enthusiastic, like a friend suggesting movie night.
+Evening/Night: perfect for a movie
+Weekend: great time to catch a movie
+Example tone: "Movie night? I can play something from your library — got anything in mind?"
+""",
             SuggestionType.TELL_JOKE: """
 Offer to tell a joke or share something funny to lighten the mood.
 Keep it playful and optional.
@@ -366,6 +384,22 @@ Example tone: "It's almost 6 PM - evening's rolling in!"
                 else:
                     candidates.append((SuggestionType.PLAY_MUSIC, 0.45))
         
+        # Play YouTube - suggest watching something on YouTube
+        if 60 < context.idle_duration_seconds < 900:  # 1-15 min idle
+            if self._can_suggest(SuggestionType.PLAY_YOUTUBE):
+                if context.time_of_day in [TimeOfDay.EVENING, TimeOfDay.NIGHT]:
+                    candidates.append((SuggestionType.PLAY_YOUTUBE, 0.6))
+                elif context.time_of_day == TimeOfDay.AFTERNOON:
+                    candidates.append((SuggestionType.PLAY_YOUTUBE, 0.4))
+        
+        # Watch movie - suggest watching a local movie (evenings/weekends)
+        if 120 < context.idle_duration_seconds < 1200:  # 2-20 min idle
+            if self._can_suggest(SuggestionType.WATCH_MOVIE):
+                if context.time_of_day in [TimeOfDay.EVENING, TimeOfDay.NIGHT]:
+                    candidates.append((SuggestionType.WATCH_MOVIE, 0.55))
+                elif context.is_weekend and context.time_of_day == TimeOfDay.AFTERNOON:
+                    candidates.append((SuggestionType.WATCH_MOVIE, 0.45))
+        
         # Tell a joke - when user seems bored (longer idle, any time)
         if 60 < context.idle_duration_seconds < 600:  # 1-10 min idle
             if self._can_suggest(SuggestionType.TELL_JOKE):
@@ -422,9 +456,20 @@ Example tone: "It's almost 6 PM - evening's rolling in!"
             logger.debug("No suitable proactive suggestions")
             return None
         
-        # Sort by confidence and pick the best
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        best_type, confidence = candidates[0]
+        # Weighted random selection — higher confidence = higher probability
+        # but not guaranteed. This ensures variety across suggestion types.
+        import random
+        types_list = [c[0] for c in candidates]
+        weights = [c[1] for c in candidates]
+        
+        # Avoid repeating the exact same suggestion type back-to-back
+        if self._last_suggestion_type in types_list and len(types_list) > 1:
+            idx = types_list.index(self._last_suggestion_type)
+            weights[idx] *= 0.3  # Reduce repeat probability by 70%
+        
+        chosen = random.choices(list(range(len(candidates))), weights=weights, k=1)[0]
+        best_type, confidence = candidates[chosen]
+        self._last_suggestion_type = best_type
         
         logger.info("Selected proactive suggestion: %s (confidence: %.2f)",
                    best_type.value, confidence)
@@ -478,6 +523,8 @@ Example tone: "It's almost 6 PM - evening's rolling in!"
             SuggestionType.GREETING: "Hey there!",
             # Action-oriented fallbacks
             SuggestionType.PLAY_MUSIC: "How about I put on some music?",
+            SuggestionType.PLAY_YOUTUBE: "Wanna watch something on YouTube?",
+            SuggestionType.WATCH_MOVIE: "Movie night? I can play something from your library!",
             SuggestionType.TELL_JOKE: "Want to hear something funny?",
             SuggestionType.FUN_FACT: "Did you know honey never spoils? Pretty cool, right!",
             SuggestionType.TIME_UPDATE: f"It's {context.current_hour}:00 - time flies!",

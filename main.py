@@ -30,9 +30,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import core modules
-from core.config import Config
+from config.settings import Config
 from core.brain import NexaBrain
-from core.gpu_monitor import GPUMonitor
+from capabilities.llm.gpu_monitor import GPUMonitor
+from core.kernel import NexaKernel
 from utils.logging_formatter import setup_logging, log_section
 from utils.error_handler import handle_error, ErrorCategory, ErrorSeverity
 
@@ -40,15 +41,16 @@ from utils.error_handler import handle_error, ErrorCategory, ErrorSeverity
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QThread, Signal, QObject, QTimer
 from ui.nexa_modern_window import NexaModernWindow
-from core.auth_manager import AuthManager
+from capabilities.web.auth_manager import AuthManager
 from ui.login_dialog import LoginDialog
-from ui.loading_dialog import LoadingDialog
+from ui.widgets.loading_dialog import LoadingDialog
 
 # Global references
 hud_window = None
 brain_instance = None
 config_instance = None
-gpu_monitor = None  # NEW: GPU monitor instance
+gpu_monitor = None  # GPU monitor instance
+kernel_instance = None  # Core AI Kernel instance
 
 
 class InitWorker(QThread):
@@ -112,6 +114,13 @@ class InitWorker(QThread):
             gpu_monitor.register_model_load("Llama 3.1 8B")
             gpu_monitor.register_model_load("SpeechBrain ECAPA-TDNN")
             logger.info("✅ GPU Monitor started successfully")
+
+            # Initialize Core AI Kernel
+            update_status("Starting Core Kernel...", "Task governance and priority scheduling")
+            logger.info("🔷 Initializing Core AI Kernel...")
+            global kernel_instance
+            kernel_instance = NexaKernel(gpu_monitor=gpu_monitor)
+            logger.info("✅ Core AI Kernel initialized")
 
             self.finished_ok.emit(config, brain)
 
@@ -266,6 +275,11 @@ def main():
         if gpu_monitor is not None:
             brain_instance.set_gpu_monitor(gpu_monitor)
         
+        # Connect Core AI Kernel to brain and window
+        if kernel_instance is not None:
+            brain_instance.set_kernel(kernel_instance)
+            hud_window.set_kernel(kernel_instance)
+        
         # Start the brain (listening, processing, etc.)
         logger.info("🧠 Starting Nexa Brain...")
         brain_instance.start()
@@ -283,6 +297,12 @@ def main():
         logger.info("🛑 Stopping Nexa Brain...")
         brain_instance.shutdown()
         logger.info("✅ Nexa Brain stopped")
+        
+        # Shutdown Core AI Kernel
+        if kernel_instance is not None:
+            logger.info("🔷 Shutting down Core AI Kernel...")
+            kernel_instance.shutdown()
+            logger.info("✅ Core AI Kernel stopped")
         
         # Stop GPU monitoring and generate report
         if gpu_monitor is not None:

@@ -183,7 +183,7 @@ class ContentBoxWindow(QMainWindow):
         inner_layout.addWidget(status_bar)
 
         # Create formatter bridge (for voice command compatibility)
-        from ui.content_box_formatter import ContentBoxFormatter
+        from ui.widgets.content_box_formatter import ContentBoxFormatter
         self.formatter = ContentBoxFormatter(self._run_js, self.theme_manager)
 
     def _setup_web_editor(self, layout):

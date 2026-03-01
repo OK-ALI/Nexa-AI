@@ -40,7 +40,7 @@ def test_embedding_engine():
     print_header("TEST 1: Embedding Engine")
     
     try:
-        from core.smart_memory.embedding_engine import EmbeddingEngine, get_embedding_engine
+        from core.memory.embedding_engine import EmbeddingEngine, get_embedding_engine
         
         # Test 1.1: Singleton instance
         engine = get_embedding_engine()
@@ -95,7 +95,7 @@ def test_memory_store():
     try:
         import tempfile
         import numpy as np
-        from core.smart_memory.memory_store import MemoryStore
+        from core.memory.memory_store import MemoryStore
         
         # Use temp directory for test DB
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -170,7 +170,7 @@ def test_memory_manager():
     
     try:
         import tempfile
-        from core.smart_memory.memory_manager import SmartMemoryManager
+        from core.memory.memory_manager import SmartMemoryManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             mm = SmartMemoryManager(tmpdir)
@@ -242,8 +242,8 @@ def test_context_constructor():
     
     try:
         import tempfile
-        from core.smart_memory.memory_manager import SmartMemoryManager
-        from core.smart_memory.context_constructor import ContextConstructor
+        from core.memory.memory_manager import SmartMemoryManager
+        from core.memory.context_constructor import ContextConstructor
         
         with tempfile.TemporaryDirectory() as tmpdir:
             mm = SmartMemoryManager(tmpdir)
@@ -297,7 +297,7 @@ def test_intent_state():
     print_header("TEST 5: Intent State (Follow-ups)")
     
     try:
-        from core.smart_memory.intent_state import IntentState
+        from core.memory.intent_state import IntentState
         
         intent = IntentState()
         
@@ -373,7 +373,7 @@ def test_context_manager_integration():
             config.memory_file.write_text("[]")
             config.prefs_file.write_text("{}")
             
-            from core.context_manager import ContextManager
+            from core.cognition.context_manager import ContextManager
             
             cm = ContextManager(config)
             
@@ -450,7 +450,7 @@ def test_complex_scenarios():
             config.memory_file.write_text("[]")
             config.prefs_file.write_text("{}")
             
-            from core.context_manager import ContextManager
+            from core.cognition.context_manager import ContextManager
             
             cm = ContextManager(config)
             

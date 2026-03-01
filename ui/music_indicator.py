@@ -95,10 +95,12 @@ class MusicIconManager:
         'check': 'check.png',               # Success/ready
         'copy': 'copy.png',                 # Copy to clipboard
         'paste': 'paste.png',               # Paste from clipboard
+        'download': 'download.png',         # Download (YouTube downloads)
         # Button action icons (aliases/reuses)
         'edit': 'settings.png',             # Edit (reuse settings)
         'export': 'share.png',              # Export (reuse share)
         'pin': 'favourite.png',             # Pin (reuse favourite)
+        'guide': 'user-guide.png',          # Guidelines/help
     }
     
     # Singleton instance

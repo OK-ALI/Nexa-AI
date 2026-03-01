@@ -14,14 +14,14 @@ def test_tts_engines():
     print("🔊 TTS Engine Switch Test")
     print("=" * 60)
     
-    from core.config import Config
+    from config.settings import Config
     
     # Test Kokoro (default)
     print("\n📌 Testing Kokoro TTS (default)...")
     config = Config()
     config.tts_engine = 'kokoro'
     
-    from core.tts import TTSEngine
+    from core.interface.tts_engine import TTSEngine
     kokoro = TTSEngine(config)
     
     print("🎤 Speaking with Kokoro...")
@@ -42,7 +42,7 @@ def test_tts_engines():
         print("   Run test_coqui_clone.py first to generate it.")
         return
     
-    from core.tts_coqui import CoquiTTSEngine
+    from core.interface.tts_coqui import CoquiTTSEngine
     coqui = CoquiTTSEngine(config)
     
     print("🎤 Speaking with Coqui XTTS (cloned voice)...")

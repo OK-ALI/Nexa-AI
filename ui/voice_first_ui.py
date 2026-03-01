@@ -22,7 +22,7 @@ from PySide6.QtGui import (
 )
 
 from core.brain import NexaBrain, NexaState
-from core.config import Config
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +481,7 @@ class VoiceFirstUI(QMainWindow):
     
     def _update_mode_button(self, btn: QPushButton):
         """Update mode button text and style based on current mode."""
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         
         current_mode = self.brain.llm_manager.current_mode
         
@@ -522,7 +522,7 @@ class VoiceFirstUI(QMainWindow):
     
     def _toggle_mode(self):
         """Toggle between online and offline mode."""
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         
         current_mode = self.brain.llm_manager.current_mode
         
@@ -735,7 +735,7 @@ class VoiceFirstUI(QMainWindow):
     
     def _brain_mode_callback(self, new_mode):
         """Mode change callback from brain thread."""
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         logger.info(f"🔄 UI received mode change notification: {new_mode}")
         
         # Update button in UI thread (need to use invokeMethod or direct call since we're already in UI thread context)

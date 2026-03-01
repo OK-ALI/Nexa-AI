@@ -68,72 +68,98 @@ class PhrasePools:
     def _init_acknowledgment_pools(self):
         """Quick acknowledgment phrases (spoken immediately)."""
         
-        # General acknowledgments - more conversational
+        # General acknowledgments - MUST be 1-3 words for fast TTS generation
         self.ack_general = PhraseCategory(
             phrases=[
-                "Let me take care of that for you!",
-                "I'm on it, give me just a moment!",
-                "Sure thing, I'll handle that right away!",
-                "Absolutely, working on it now!",
-                "I'll get that done for you, one moment!",
-                "Of course! Let me work on that!",
-                "Great, I'm processing your request now!",
-                "I'm looking into that for you!",
-                "Let me see what I can do here!",
-                "Understood! I'm working on it now!",
-                "I've got this, just a second!",
-                "I'll take care of that right now!",
+                "On it!",
+                "Got it!",
+                "Sure thing!",
+                "Absolutely!",
+                "Right away!",
+                "Of course!",
+                "Working on it!",
+                "I'm on it!",
+                "Let me check!",
+                "Understood!",
+                "Leave it to me!",
+                "Already on it!",
             ]
         )
-        
+
         # For search/lookup tasks
         self.ack_search = PhraseCategory(
             phrases=[
-                "Let me search for that information for you!",
-                "I'm looking that up right now!",
-                "Give me a moment to find what you need!",
-                "Searching through my knowledge base now!",
-                "Let me dig into that for you!",
-                "I'm on the hunt for that information!",
-                "Let me see what I can find about that!",
+                "Searching now!",
+                "Looking that up for you!",
+                "Let me find that!",
+                "Checking for you!",
+                "On the hunt!",
+                "Let me dig into that!",
+                "I'll look that up!",
             ]
         )
-        
+
         # For app/system operations
         self.ack_system = PhraseCategory(
             phrases=[
-                "I'm opening that up for you now!",
-                "Let me take care of that system task!",
-                "Starting that up right away!",
-                "I'll handle that operation for you!",
-                "Give me just a moment to set that up!",
-                "I'm making that happen right now!",
+                "Opening that now!",
+                "On it!",
+                "Starting it up!",
+                "Setting it up!",
+                "Right away!",
+                "Taking care of it!",
+                "Running that now!",
             ]
         )
-        
+
         # For complex/long tasks
         self.ack_complex = PhraseCategory(
             phrases=[
-                "This might take me a little bit, but I'm on it!",
-                "Let me work through this step by step for you!",
-                "I'm analyzing that request now, give me a moment!",
-                "This one requires some thought, let me work on it!",
-                "I need to think about this one, hang tight!",
-                "Let me carefully work through this for you!",
-                "I'm processing all the details now!",
+                "Working on it!",
+                "Give me a moment!",
+                "Thinking this through!",
+                "Let me work on that!",
+                "Analyzing now!",
+                "I'll figure this out!",
+                "On it, this might take a sec!",
             ]
         )
-        
+
         # For creative tasks (writing, generating)
         self.ack_creative = PhraseCategory(
             phrases=[
-                "Let me put some thought into crafting that for you!",
-                "I'm working on creating something nice for you!",
-                "Give me a moment to compose that thoughtfully!",
-                "Let me put my creative hat on for this one!",
-                "I'm thinking about the best way to approach this!",
-                "Let me craft something special for you!",
-                "I'm brainstorming the best response for you!",
+                "Let me think about that!",
+                "Crafting something now!",
+                "Working on it!",
+                "Great idea, let me draft that!",
+                "Putting something together!",
+                "On it, give me a moment!",
+            ]
+        )
+
+        # For media playback (YouTube, music, video)
+        self.ack_media = PhraseCategory(
+            phrases=[
+                "Pulling that up!",
+                "Loading it now!",
+                "On the video!",
+                "Tuning in!",
+                "Getting that ready!",
+                "Finding that for you!",
+                "Loading your track!",
+                "Queuing it up!",
+            ]
+        )
+
+        # For file download operations
+        self.ack_download = PhraseCategory(
+            phrases=[
+                "Starting the download!",
+                "Grabbing that for you!",
+                "Queuing it up!",
+                "On it, downloading now!",
+                "Saving that for you!",
+                "Pulling it down!",
             ]
         )
     
@@ -160,16 +186,38 @@ class PhrasePools:
                 "Found some relevant stuff, organizing it for you...",
                 "Almost have what you're looking for...",
                 "Digging deeper into the data...",
+                "Combing through the results...",
             ]
         )
-        
+
         # For complex operations
         self.progress_complex = PhraseCategory(
             phrases=[
                 "This is a bit more complex, still working on it...",
                 "I'm making my way through this step by step...",
                 "Getting closer to the solution...",
-                "Processing...",
+                "Processing, bear with me...",
+                "Almost cracked it!",
+            ]
+        )
+
+        # For media operations (buffering, loading)
+        self.progress_media = PhraseCategory(
+            phrases=[
+                "Still loading, almost ready...",
+                "Fetching the stream...",
+                "Buffering just a moment...",
+                "Getting the content ready for you...",
+            ]
+        )
+
+        # For download operations
+        self.progress_download = PhraseCategory(
+            phrases=[
+                "Download in progress, hang tight...",
+                "Still pulling that down...",
+                "We're getting there, downloading now...",
+                "Almost got it, just a bit more...",
             ]
         )
     
@@ -238,6 +286,8 @@ class PhrasePools:
         pools = {
             "general": self.ack_general,
             "search": self.ack_search,
+            "media": self.ack_media,
+            "download": self.ack_download,
             "system": self.ack_system,
             "complex": self.ack_complex,
             "creative": self.ack_creative,
@@ -258,6 +308,8 @@ class PhrasePools:
         pools = {
             "general": self.progress_general,
             "search": self.progress_search,
+            "media": self.progress_media,
+            "download": self.progress_download,
             "complex": self.progress_complex,
         }
         pool = pools.get(task_type, self.progress_general)

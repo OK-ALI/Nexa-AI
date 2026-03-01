@@ -1,12 +1,12 @@
 # 🗺️ Nexa AI - Complete Phases Roadmap
 
 **Project Completion:** 64.52% (20/31 Phases)  
-**Last Updated:** February 15, 2026  
+**Last Updated:** March 1, 2026  
 **Status:** Phase 17 COMPLETE ✅ - Modern Web-Tech Particle Orb UI  
 **Priority Track:** 🐾 Nexa Companion UI Phase P3 - ✅ COMPLETED (Live2D Integration)  
-**LATEST:** 🔐 Login System, Breathing Glow Title, Sir/Boss Addressing  
+**LATEST:** 🚀 Core System Enhancements: TTS Cache, YouTube Expansion, Priority Overhaul  
 **NOW:** 💜 Companion Mode Phase 30 - Emotional Intelligence  
-**COMPLETED:** 🎨 Phase 17 + Phase 20 (Smart Memory) ✅
+**COMPLETED:** 🎨 Phase 17 + Phase 20 (Smart Memory) ✅ + Phase 29 Extended (March 2026)
 
 ---
 
@@ -1269,40 +1269,77 @@ Transformed the static Qt-painted voice orb into a **stunning particle visualiza
 
 ---
 
-### Phase 18: YouTube Integration
-**Status:** 📋 Planned  
-**Estimated Time:** 28 hours  
-**Target Start:** TBD (After Phase 17)
+### Phase 18: YouTube Integration & Enhanced Web Search
+**Status:** ✅ COMPLETED  
+**Completed:** February 16, 2026  
+**Actual Time:** ~16 hours
 
-**Core Module:** `youtube_service.py` (new)
+**Core Modules:** `youtube_service.py` (new), `web_scraper.py` (new), `ui/download_progress.py` (new)
 
-#### Features Planned:
-- 📋 Play YouTube videos by name/URL
-- 📋 Search YouTube
-- 📋 Playlist management
-- 📋 Subscribe to channels
-- 📋 Video queue control
-- 📋 Audio-only mode
-- 📋 Video recommendations
-- 📋 Watch history
+#### Features Implemented:
+- ✅ Play YouTube videos by name/URL (opens in browser via yt-dlp search)
+- ✅ Search YouTube and return inline results (title, channel, views, duration)
+- ✅ Play from search results by number (1-5)
+- ✅ Get video info/metadata (title, channel, views, duration, description)
+- ✅ Download YouTube videos with quality options (360p/480p/720p/1080p/1440p/4K/best)
+- ✅ Download YouTube audio as MP3
+- ✅ Download progress bar on main window (accent-colored, auto-hide animation)
+- ✅ Download status checking (progress %, speed, ETA)
+- ✅ Video queue management (view/clear queue)
+- ✅ Intelligent web search with query intent detection (wiki/movie/tech/general routing)
+- ✅ Wikipedia API integration (free REST API — fastest for factual queries)
+- ✅ Dedicated Wikipedia extractor (infobox + article paragraphs + citation cleanup)
+- ✅ Dedicated IMDB extractor (rating, plot, cast, director, metadata)
+- ✅ Dedicated Stack Overflow extractor (question + accepted/top answer + code blocks)
+- ✅ Source priority ranking (knowledge sites float to top based on intent)
+- ✅ Content deduplication and noise filtering (cookie banners, ads, popups removed)
+- ✅ DuckDuckGo search (primary) + Google scrape (fallback)
+- ✅ Webpage scraping (scrape_url) — extract readable text from any URL
+- ✅ All features blocked in offline mode with friendly messages
+- ✅ No API keys required — 100% free (yt-dlp + DuckDuckGo + Wikipedia API)
 
-#### Functions to Add: 10
-- `play_youtube(query)`
-- `search_youtube(query)`
-- `create_playlist(name)`
-- `add_to_playlist(video, playlist)`
-- `subscribe_to_channel(channel)`
-- `next_video()`
-- `previous_video()`
-- `get_video_info()`
-- `enable_audio_only()`
-- `get_watch_history()`
+#### New Files Created: 3
+| File | Purpose |
+|------|---------|
+| `core/youtube_service.py` | YouTube playback, search, download with quality presets & progress hooks |
+| `core/web_scraper.py` | Intelligent web search with Wikipedia API, IMDB/SO extractors, intent routing |
+| `ui/download_progress.py` | Animated download progress bar widget for main window |
 
-#### Technical Requirements:
-- YouTube Data API v3
-- yt-dlp for video extraction
-- selenium for browser control
-- pytube for metadata
+#### Functions Added: 12
+| Function | Description |
+|----------|-------------|
+| `play_youtube(query)` | Play a YouTube video by name or URL |
+| `search_youtube(query)` | Search YouTube, return list of results |
+| `play_youtube_result(number)` | Play from last search results (1-5) |
+| `get_video_info(query)` | Video metadata (title, channel, views, duration) |
+| `download_youtube(query, audio_only, quality)` | Download video/audio with quality selection |
+| `download_youtube_video(query, quality)` | Download video shortcut |
+| `download_youtube_audio(query)` | Download audio as MP3 |
+| `get_download_status()` | Check download progress |
+| `get_youtube_queue()` | View playback queue |
+| `clear_youtube_queue()` | Clear playback queue |
+| `smart_search(query)` | Search web, return actual text content |
+| `scrape_url(url)` | Scrape webpage, return text content |
+
+#### Dependencies Added:
+- `yt-dlp` — YouTube search/download (no API key)
+- `beautifulsoup4` — HTML parsing for web scraping
+
+#### Technical Notes:
+- yt-dlp handles all YouTube operations (no YouTube API key needed)
+- DuckDuckGo HTML search (no API key) with Google scrape fallback
+- Wikipedia REST API for direct factual answers (no API key, free)
+- Dedicated extractors: Wikipedia (infobox + text), IMDB (rating/cast/plot), Stack Overflow (Q&A + code)
+- Query intent detection routes to best source: 'who is X' → Wikipedia, 'X movie rating' → IMDB, 'how to code X' → Stack Overflow
+- Source priority ranking with domain scores (Wikipedia 100, IMDB 90, SO 85, BBC/Reuters 75, etc.)
+- Content noise filtering removes cookie banners, ads, popups, consent dialogs
+- Content deduplication across and within sources
+- Background thread downloading with yt-dlp progress hooks
+- Thread-safe Qt signals bridge download worker → UI progress bar
+- Quality presets map to yt-dlp format strings for resolution selection
+- Downloads save to `~/Videos/Nexa Downloads/`
+- Download progress bar uses accent color (#00D4FF dark / #0066CC light)
+- Auto-hides after 5s on completion, 8s on failure
 
 ---
 
@@ -1878,6 +1915,61 @@ pyarrow>=14.0.0            # LanceDB dependency
 - ✅ Gentle conversation starters
 - ✅ Break reminders
 
+---
+
+### 🚀 Phase 29 Extended: Core System Enhancements
+**Status:** ✅ COMPLETED  
+**Completion Date:** March 1, 2026  
+**Tests Passing:** 140/140 ✅
+
+Four focused improvements across the core subsystems, prompted by a full feature audit.
+
+#### 1. Priority Manager Overhaul (`core/kernel/priority_manager.py`)
+- ✅ Expanded from 7 → **10 priority levels**
+- ✅ New levels: `MEMORY_CLEANUP=10`, `IDLE_SUGGESTION=20`, `DOWNLOAD=30`, `BACKGROUND_SYNC=40`, `MEDIA_PLAYBACK=60`, `SCREEN_QUERY=70`, `NOTIFICATION_ALERT=80`, `USER_COMMAND=90`, `VOICE_INPUT=100`, `EMERGENCY=110`
+- ✅ `BACKGROUND_LEVELS` frozenset governs automatic suppression when media is playing
+- ✅ `EMERGENCY` level bypasses all locks (system-critical operations unblockable)
+- ✅ `kernel/__init__.py` exports `BACKGROUND_LEVELS` for external use
+
+#### 2. ThinkingFeedback Improvements (`core/companion/thinking_feedback.py`)
+- ✅ Added `TaskType.MEDIA` — routes "play/watch/youtube/music" commands for accurate feedback
+- ✅ Added `TaskType.DOWNLOAD` — routes "download/save video/grab" commands
+- ✅ `task_keywords` restructured so MEDIA is checked before SYSTEM (prevents misclassification)
+
+#### 3. PhrasePools Expansion (`core/companion/phrase_pools.py`)
+- ✅ New pool `ack_media`: "Pulling that up!", "Loading it now!", "On the video!", "Tuning in!"...
+- ✅ New pool `ack_download`: "Starting the download!", "Grabbing that for you!"...
+- ✅ New pool `progress_media`: "Still loading, almost ready...", "Fetching the stream!"...
+- ✅ New pool `progress_download`: "Download in progress, hang tight...", "Almost got it!"...
+- ✅ All existing acknowledgment pools enriched with more variety
+- ✅ `get_acknowledgment()` and `get_progress()` dispatch dicts updated
+
+#### 4. TTS Engine Optimization (`core/interface/tts_engine.py`)
+- ✅ **ONNX warmup pass** on startup — eliminates 1-2s cold-start delay on first phrase
+- ✅ **LRU audio cache** (`OrderedDict`, 50 entries) — repeated phrases served from memory (0ms latency)
+- ✅ **Background pre-cache thread** — 14 most common acknowledgment phrases pre-generated at startup
+- ✅ Cache is lock-safe and thread-aware
+
+#### 5. YouTube / NVP Expansion (`capabilities/media/youtube_service.py`)
+- ✅ `get_video_transcript(query)` — extracts auto-generated captions via yt-dlp json3 format
+- ✅ `get_trending_videos(region, count)` — lists YouTube trending by region
+- ✅ `get_channel_videos(channel_name, count)` — recent videos from any channel (stores in `_last_search_results`)
+- ✅ `play_youtube_playlist(url, max_videos)` — loads playlist into queue and plays first video
+- ✅ All 4 methods registered in `FunctionRegistry` with LLM-facing descriptions + offline mode messages
+- ✅ 4 delegate methods added to `Executor`
+
+| File Modified | Change |
+|---|---|
+| `core/kernel/priority_manager.py` | 10 levels, BACKGROUND_LEVELS, EMERGENCY bypass |
+| `core/kernel/__init__.py` | Export BACKGROUND_LEVELS |
+| `core/companion/thinking_feedback.py` | MEDIA + DOWNLOAD task types |
+| `core/companion/phrase_pools.py` | 4 new pools, enriched existing |
+| `core/interface/tts_engine.py` | ONNX warmup, LRU cache, pre-cache thread |
+| `capabilities/media/youtube_service.py` | 4 new public methods |
+| `capabilities/executor.py` | 4 delegate methods |
+| `capabilities/function_registry.py` | 4 registrations + offline messages |
+| `tests/test_nexa_full_suite.py` | 140/140 tests (4 new) |
+
 #### Proactive Triggers:
 | Trigger | Example Response |
 |---------|------------------|
@@ -2106,8 +2198,9 @@ pyarrow>=14.0.0            # LanceDB dependency
 | Phase 28 (✅ Thinking) | 3 | 148 |
 | Phase 29 (✅ Proactive) | 6 | 154 |
 | Bonus (Login/Lock) | 1 | 155 |
-| **Current Total** | **158** | **158** |
-| Phase 18 (Planned) | 15 | 173 |
+| Phase 29 Extended (✅ Mar 2026) | 4 | 159 |
+| **Current Total** | **162** | **162** |
+| Phase 18 (Complete) | 12 | 173 |
 | Phase 19 (Planned) | 10 | 183 |
 | Phase 22 (Planned) | 10 | 193 |
 | Phase 23 (Planned) | 12 | 205 |
@@ -2194,26 +2287,50 @@ NEXA should feel like a real companion - responsive, proactive, and emotionally 
 ---
 
 ### 💜 Phase 29: Proactive Engagement
-**Status:** 🚧 IN PROGRESS  
-**Target Start:** January 6, 2026  
+**Status:** ✅ COMPLETED  
+**Completion Date:** January 2026  
 **Estimated Time:** 20 hours
 
-**Core Modules:** `core/companion/idle_monitor.py`, `core/companion/proactive_engine.py`
+**Core Modules:** `core/companion/idle_monitor.py` ✅, `core/companion/proactive_engine.py` ✅, `core/companion/pattern_learner.py` ✅
 
-#### Planned Features:
-- ⬜ Idle detection - track time since last interaction
-- ⬜ Smart suggestions based on time of day and user patterns
-- ⬜ Morning greetings with briefing offer
-- ⬜ Break reminders after extended work sessions
-- ⬜ Weather/news check offers when idle
-- ⬜ Learning user's daily routines
-- ⬜ LLM-driven suggestion generation (no hardcoded phrases)
-- ⬜ Graceful accept/decline handling via function registry
+#### Features Implemented:
+- ✅ Idle detection (track user inactivity)
+- ✅ Proactive suggestions when idle
+- ✅ Time-based context awareness (morning/evening/night greetings)
+- ✅ Activity pattern learning from Smart Memory
+- ✅ Gentle conversation starters
+- ✅ Break reminders
 
-#### Files to Create:
-- ⬜ `core/companion/idle_monitor.py` - Tracks user idle time
-- ⬜ `core/companion/proactive_engine.py` - Decides what to suggest
-- ⬜ `core/companion/pattern_learner.py` - Learns user patterns
+---
+
+### 🚀 Phase 29 Extended: Core System Enhancements
+**Status:** ✅ COMPLETED  
+**Completion Date:** March 1, 2026  
+**Tests Passing:** 140/140 ✅
+
+Four focused improvements merged into the core subsystems.
+
+#### Priority Manager (`core/kernel/priority_manager.py`)
+- ✅ Expanded 7 → **10 priority levels** with IDs covering full task hierarchy
+- ✅ `BACKGROUND_LEVELS` frozenset auto-suppresses low-priority tasks during media
+- ✅ `EMERGENCY=110` bypasses lock (system-critical operations always allowed)
+
+#### ThinkingFeedback + PhrasePools
+- ✅ `TaskType.MEDIA` and `TaskType.DOWNLOAD` added to feedback enum
+- ✅ Keyword routing restructured (MEDIA checked before SYSTEM)
+- ✅ 4 new phrase pools: `ack_media`, `ack_download`, `progress_media`, `progress_download`
+- ✅ All existing ack pools enriched with more variety
+
+#### TTS Engine (`core/interface/tts_engine.py`)
+- ✅ **ONNX warmup** on model load — eliminates 1-2s cold-start lag
+- ✅ **LRU audio cache** (50 entries, `OrderedDict`) — instant replay of repeated phrases
+- ✅ **Background pre-cache** thread — 14 frequent ack phrases generated at startup
+
+#### YouTube / NVP (`capabilities/media/youtube_service.py`)
+- ✅ `get_video_transcript(query)` — auto-captions via yt-dlp json3
+- ✅ `get_trending_videos(region, count)` — YouTube trending by country
+- ✅ `get_channel_videos(channel_name, count)` — recent uploads from any channel
+- ✅ `play_youtube_playlist(url, max_videos)` — playlist queue + auto-play first
 
 #### Integration Points:
 - ⬜ Add `is_proactive` field to `PendingIntent` in `intent_state.py`
@@ -2306,8 +2423,8 @@ NEXA should feel like a real companion - responsive, proactive, and emotionally 
 
 ---
 
-**Roadmap Version:** 3.0  
-**Last Updated:** February 15, 2026  
+**Roadmap Version:** 3.1  
+**Last Updated:** March 1, 2026  
 **Maintained By:** Ali Adil Waseem  
 **Project:** Nexa AI Desktop Assistant
 
@@ -2316,18 +2433,20 @@ NEXA should feel like a real companion - responsive, proactive, and emotionally 
 **🎨 Phase 17:** ✅ COMPLETED - Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)  
 **🧠 Phase 20:** ✅ COMPLETED - Smart Memory & Learning (LanceDB + embeddings, 10/10 tests)  
 **🔐 Bonus:** ✅ Login System, Lock Screen, Breathing Glow Title, Sir/Boss Addressing  
+**🚀 Phase 29 Extended (Mar 2026):** ✅ TTS LRU Cache + YouTube Expansion + Priority Overhaul + MEDIA/DOWNLOAD Companion  
 **💜 NOW:** Companion Mode Phase 30 - Emotional Intelligence  
-**💜 COMPLETED:** Phases 28-29 ✅ (Thinking Feedback, Proactive Engagement)  
-**⏸️ ON HOLD:** Phase 18-27 (Standard features, lower priority)  
+**💜 COMPLETED:** Phases 28-29 ✅ + Phase 29 Extended ✅  
+**⏸️ ON HOLD:** Phase 19-27 (Standard features, lower priority)  
 **Paused Phase:** Phase 15 (Sharing) - Current implementation functional, platform automation deferred
 
 **Companion Mode Progress (HIGH PRIORITY):**
 - Phase 28: ✅ COMPLETED - Thinking State Feedback (acknowledgment, progress updates)
 - Phase 29: ✅ COMPLETED - Proactive Engagement (idle suggestions, patterns)
+- Phase 29 Extended: ✅ COMPLETED - TTS Optimization + YouTube API + Priority Manager + MEDIA/DOWNLOAD Feedback
 - Phase 30: 🚧 IN PROGRESS - Emotional Intelligence (mood detection, check-ins)
 - Phase 31: 📋 PLANNED - Personality & Fun (LLM greetings, mini-games)
 
-**143 Registered Functions** | **PySide6 UI** | **Kokoro TTS** | **Faster-Whisper base.en**
+**147 Registered Functions** | **PySide6 UI** | **Kokoro TTS (LRU Cache)** | **Faster-Whisper base.en** | **140/140 Tests ✅**
 
 **Note:** Screen Reading/Vision features (Phase 23) and Notifications (part of Phase 23) are planned for implementation with PaddleOCR-VL for 100% offline capabilities. Current placeholders in codebase are non-functional.
 

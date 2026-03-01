@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- QWebChannel.js injected dynamically by Python after page load -->
+    <title>NVP — NEXA Vision Player</title>
+    <style>
+      :root {
+        --bg-primary: #0a0f19;
+        --bg-secondary: #050a12;
+        --accent: #00d4ff;
+        --accent-purple: #9f7fff;
+        --accent-green: #00ff96;
+        --text-primary: #ffffff;
+        --text-secondary: #00d4ff;
+        --text-dim: rgba(0, 136, 204, 0.6);
+        --glass-bg: rgba(50, 70, 100, 0.35);
+        --glass-border: rgba(0, 212, 255, 0.15);
+        --glass-hover: rgba(70, 90, 120, 0.5);
+        --danger: #ff4757;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          "Segoe UI",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: linear-gradient(
+          135deg,
+          var(--bg-primary),
+          var(--bg-secondary)
+        );
+        color: var(--text-primary);
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+        user-select: none;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* === TITLE BAR === */
+      .title-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 16px;
+        background: rgba(5, 10, 18, 0.9);
+        border-bottom: 1px solid var(--glass-border);
+        -webkit-app-region: drag;
+        min-height: 42px;
+        flex-shrink: 0;
+      }
+
+      .title-bar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nvp-logo {
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 3px;
+        background: linear-gradient(
+          135deg,
+          var(--accent),
+          var(--accent-purple)
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .nvp-divider {
+        width: 1px;
+        height: 18px;
+        background: var(--glass-border);
+      }
+
+      .video-title-text {
+        font-size: 12px;
+        color: var(--text-dim);
+        max-width: 500px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* Title-bar download progress */
+      .tb-download {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-left: 12px;
+      }
+
+      .tb-download.active { display: flex; }
+
+      .tb-dl-bar-bg {
+        width: 120px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .tb-dl-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-green));
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+
+      .tb-dl-text {
+        font-size: 10px;
+        color: var(--accent-green);
+        font-family: 'Consolas', monospace;
+        white-space: nowrap;
+      }
+
+      .title-bar-right {
+        display: flex;
+        gap: 4px;
+        -webkit-app-region: no-drag;
+        align-items: center;
+      }
+
+      .tb-dl-btn {
+        width: 32px;
+        height: 26px;
+        border: none;
+        background: transparent;
+        color: var(--accent);
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        transition: all 0.15s;
+        margin-right: 4px;
+      }
+
+      .tb-dl-btn:hover {
+        background: var(--glass-bg);
+        color: var(--accent-green);
+      }
+
+      .window-btn {
+        width: 32px;
+        height: 26px;
+        border: none;
+        background: transparent;
+        color: var(--text-dim);
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        transition: all 0.15s;
+      }
+
+      .window-btn:hover {
+        background: var(--glass-bg);
+        color: var(--text-primary);
+      }
+      .window-btn.close:hover {
+        background: var(--danger);
+        color: white;
+      }
+
+      /* === VIDEO CONTAINER === */
+      .video-container {
+        flex: 1;
+        position: relative;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      /* Loading overlay */
+      .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(5, 10, 18, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        z-index: 10;
+        transition: opacity 0.3s;
+      }
+
+      .loading-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .loading-spinner {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: conic-gradient(
+          from 0deg,
+          transparent 0%,
+          var(--accent) 30%,
+          var(--accent-purple) 60%,
+          transparent 100%
+        );
+        animation: spin 1s linear infinite;
+        position: relative;
+      }
+
+      .loading-spinner::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: var(--bg-secondary);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loading-text {
+        font-size: 13px;
+        color: var(--text-secondary);
+        letter-spacing: 1px;
+      }
+
+      .loading-progress {
+        width: 200px;
+        height: 3px;
+        background: var(--glass-bg);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .loading-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-purple));
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+
+      /* === CONTROLS BAR === */
+      .controls-bar {
+        background: rgba(5, 10, 18, 0.92);
+        backdrop-filter: blur(12px);
+        border-top: 1px solid var(--glass-border);
+        padding: 0;
+        flex-shrink: 0;
+      }
+
+      /* Progress/Seek bar */
+      .seek-container {
+        width: 100%;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        cursor: pointer;
+        position: relative;
+        transition: height 0.15s;
+      }
+
+      .seek-container:hover {
+        height: 6px;
+      }
+
+      .seek-buffered {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.12);
+        pointer-events: none;
+      }
+
+      .seek-progress {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-purple));
+        pointer-events: none;
+      }
+
+      .seek-thumb {
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        width: 12px;
+        height: 12px;
+        background: var(--accent);
+        border-radius: 50%;
+        pointer-events: none;
+        transition: transform 0.15s;
+        box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+      }
+
+      .seek-container:hover .seek-thumb {
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      /* Control buttons row */
+      .controls-row {
+        display: flex;
+        align-items: center;
+        padding: 6px 12px;
+        gap: 6px;
+      }
+
+      .ctrl-btn {
+        width: 34px;
+        height: 34px;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+        font-size: 16px;
+        opacity: 0.85;
+      }
+
+      .ctrl-btn:hover {
+        background: var(--glass-bg);
+        opacity: 1;
+      }
+      .ctrl-btn.play-btn {
+        font-size: 20px;
+        opacity: 1;
+      }
+
+      .time-display {
+        font-size: 11px;
+        color: var(--text-dim);
+        font-family: "Consolas", monospace;
+        padding: 0 6px;
+        white-space: nowrap;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      /* Volume slider */
+      .volume-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .volume-slider {
+        width: 70px;
+        height: 3px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      .volume-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 10px;
+        height: 10px;
+        background: var(--accent);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      /* === DOWNLOAD PANEL === */
+      .download-panel {
+        position: fixed;
+        top: 46px;
+        right: 12px;
+        width: 320px;
+        background: rgba(10, 15, 25, 0.96);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 16px;
+        z-index: 100;
+        transform: translateY(10px);
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      }
+
+      .download-panel.visible {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      .dl-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      .dl-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent);
+        letter-spacing: 1px;
+      }
+
+      .dl-close {
+        width: 24px;
+        height: 24px;
+        border: none;
+        background: transparent;
+        color: var(--text-dim);
+        cursor: pointer;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+
+      .dl-close:hover {
+        background: var(--glass-bg);
+        color: var(--text-primary);
+      }
+
+      .dl-options {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .dl-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: var(--glass-bg);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .dl-option:hover {
+        border-color: var(--accent);
+        background: var(--glass-hover);
+      }
+
+      .dl-option-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dl-quality {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-primary);
+        min-width: 44px;
+      }
+
+      .dl-format {
+        font-size: 10px;
+        color: var(--text-dim);
+        text-transform: uppercase;
+      }
+
+      .dl-size {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .dl-badge {
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: linear-gradient(
+          135deg,
+          var(--accent),
+          var(--accent-purple)
+        );
+        color: var(--bg-primary);
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+
+      /* Download progress */
+      .dl-progress-section {
+        margin-top: 12px;
+        display: none;
+      }
+
+      .dl-progress-section.active {
+        display: block;
+      }
+
+      .dl-progress-info {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+        color: var(--text-dim);
+        margin-bottom: 6px;
+      }
+
+      .dl-progress-bar-bg {
+        width: 100%;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .dl-progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-green));
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+
+      /* === INFO OVERLAY removed — title is in the title bar === */
+
+      /* === LIGHT THEME === */
+      body.light {
+        --bg-primary: #e8f4f8;
+        --bg-secondary: #d5e9f0;
+        --accent: #0088cc;
+        --accent-purple: #7b68ee;
+        --accent-green: #00aa77;
+        --text-primary: #1a1a1a;
+        --text-secondary: #0088cc;
+        --text-dim: rgba(74, 85, 104, 0.6);
+        --glass-bg: rgba(0, 136, 204, 0.08);
+        --glass-border: rgba(0, 100, 180, 0.15);
+        --glass-hover: rgba(0, 136, 204, 0.15);
+      }
+
+      body.light .title-bar {
+        background: rgba(232, 244, 248, 0.95);
+      }
+      body.light .controls-bar {
+        background: rgba(232, 244, 248, 0.95);
+      }
+      body.light .loading-overlay {
+        background: rgba(232, 244, 248, 0.95);
+      }
+      body.light .download-panel {
+        background: rgba(232, 244, 248, 0.98);
+      }
+
+      /* Keyboard shortcut hint */
+      .shortcut-toast {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.8);
+        background: rgba(0, 0, 0, 0.75);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        pointer-events: none;
+        opacity: 0;
+        transition: all 0.2s;
+        z-index: 15;
+      }
+
+      .shortcut-toast.show {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      /* Double-click fullscreen hint */
+      .video-container {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- TITLE BAR -->
+    <div class="title-bar">
+      <div class="title-bar-left">
+        <span class="nvp-logo">NVP</span>
+        <div class="nvp-divider"></div>
+        <span class="video-title-text" id="titleText">NEXA Vision Player</span>
+        <div class="tb-download" id="tbDownload">
+          <div class="tb-dl-bar-bg"><div class="tb-dl-bar-fill" id="tbDlFill"></div></div>
+          <span class="tb-dl-text" id="tbDlText"></span>
+        </div>
+      </div>
+      <div class="title-bar-right">
+        <button class="tb-dl-btn" onclick="toggleDownload()" title="Download">
+          ⬇
+        </button>
+        <button class="window-btn" onclick="nvpMinimize()" title="Minimize">
+          ─
+        </button>
+        <button class="window-btn" onclick="nvpMaximize()" title="Maximize">
+          □
+        </button>
+        <button class="window-btn close" onclick="nvpClose()" title="Close">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- VIDEO -->
+    <div class="video-container" id="videoContainer">
+      <video id="videoPlayer" preload="auto"></video>
+
+      <!-- Loading overlay -->
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">Preparing video...</div>
+        <div class="loading-progress">
+          <div class="loading-progress-bar" id="loadingBar"></div>
+        </div>
+      </div>
+
+      <!-- Toast for keyboard shortcuts -->
+      <div class="shortcut-toast" id="toast"></div>
+
+      <!-- Download panel -->
+      <div class="download-panel" id="downloadPanel">
+        <div class="dl-header">
+          <span class="dl-title">⬇ DOWNLOAD</span>
+          <button class="dl-close" onclick="toggleDownload()">✕</button>
+        </div>
+        <div class="dl-options" id="dlOptions">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="dl-progress-section" id="dlProgress">
+          <div class="dl-progress-info">
+            <span id="dlProgressText">Downloading...</span>
+            <span id="dlProgressPercent">0%</span>
+          </div>
+          <div class="dl-progress-bar-bg">
+            <div class="dl-progress-fill" id="dlProgressFill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTROLS BAR -->
+    <div class="controls-bar">
+      <!-- Seek bar -->
+      <div class="seek-container" id="seekBar">
+        <div class="seek-buffered" id="seekBuffered"></div>
+        <div class="seek-progress" id="seekProgress"></div>
+        <div class="seek-thumb" id="seekThumb"></div>
+      </div>
+
+      <!-- Buttons row -->
+      <div class="controls-row">
+        <button
+          class="ctrl-btn play-btn"
+          id="playBtn"
+          onclick="togglePlay()"
+          title="Play/Pause (Space)"
+        >
+          ▶
+        </button>
+        <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+        <div class="spacer"></div>
+        <div class="volume-group">
+          <button
+            class="ctrl-btn"
+            id="volumeBtn"
+            onclick="toggleMute()"
+            title="Mute (M)"
+          >
+            🔊
+          </button>
+          <input
+            type="range"
+            class="volume-slider"
+            id="volumeSlider"
+            min="0"
+            max="100"
+            value="100"
+            oninput="setVolume(this.value)"
+          />
+        </div>
+        <button class="ctrl-btn" onclick="toggleDownload()" title="Download">
+          ⬇
+        </button>
+        <button
+          class="ctrl-btn"
+          id="fullscreenBtn"
+          onclick="toggleFullscreen()"
+          title="Fullscreen (F)"
+        >
+          ⛶
+        </button>
+      </div>
+    </div>
+
+    <script>
+      // === STATE ===
+      const video = document.getElementById("videoPlayer");
+      const playBtn = document.getElementById("playBtn");
+      const timeDisplay = document.getElementById("timeDisplay");
+      const seekBar = document.getElementById("seekBar");
+      const seekProgress = document.getElementById("seekProgress");
+      const seekBuffered = document.getElementById("seekBuffered");
+      const seekThumb = document.getElementById("seekThumb");
+      const loadingOverlay = document.getElementById("loadingOverlay");
+      const loadingText = document.getElementById("loadingText");
+      const loadingBar = document.getElementById("loadingBar");
+      const downloadPanel = document.getElementById("downloadPanel");
+      const toast = document.getElementById("toast");
+
+      let videoInfo = {};
+      let downloadFormats = [];
+
+      // === VIDEO LOADING (called from Python) ===
+      // Local file mode
+      function loadVideo(filePath, title, channel, duration) {
+        videoInfo = { title, channel, duration };
+        document.getElementById("titleText").textContent =
+          title || "NEXA Vision Player";
+
+        video.src = filePath;
+        video.load();
+        loadingOverlay.classList.remove("hidden");
+        loadingText.textContent = "Loading video...";
+      }
+
+      // YouTube embed mode — no download needed
+      function loadYouTube(videoId, title) {
+        videoInfo = { title, videoId };
+        document.getElementById("titleText").textContent =
+          title || "NEXA Vision Player";
+
+        // Hide the <video> element and native controls
+        video.style.display = "none";
+        document.querySelector(".controls-bar").style.display = "none";
+
+        // Create YouTube iframe
+        const container = document.getElementById("videoContainer");
+        const iframe = document.createElement("iframe");
+        iframe.id = "ytPlayer";
+        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3`;
+        iframe.style.cssText = "width:100%;height:100%;border:none;position:absolute;inset:0;z-index:5;";
+        iframe.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
+        iframe.allowFullscreen = true;
+        container.appendChild(iframe);
+
+        // Hide loading overlay
+        loadingOverlay.classList.add("hidden");
+      }
+
+      function setLoadingProgress(percent, text) {
+        loadingBar.style.width = percent + "%";
+        if (text) loadingText.textContent = text;
+      }
+
+      function videoReady() {
+        loadingOverlay.classList.add("hidden");
+        video.play();
+      }
+
+      // === DOWNLOAD FORMATS (called from Python) ===
+      function setDownloadFormats(formatsJson) {
+        try {
+          downloadFormats = JSON.parse(formatsJson);
+          renderDownloadOptions();
+        } catch (e) {
+          console.error("Format parse error:", e);
+        }
+      }
+
+      function renderDownloadOptions() {
+        const container = document.getElementById("dlOptions");
+        container.innerHTML = "";
+
+        downloadFormats.forEach((fmt, i) => {
+          const option = document.createElement("div");
+          option.className = "dl-option";
+          option.onclick = () => startDownload(fmt.quality, fmt.audio_only);
+
+          const badge =
+            fmt.quality === "best" ? '<span class="dl-badge">BEST</span>' : "";
+          option.innerHTML = `
+        <div class="dl-option-left">
+          <span class="dl-quality">${fmt.label}</span>
+          <span class="dl-format">${fmt.format}</span>
+          ${badge}
+        </div>
+        <span class="dl-size">${fmt.size || "—"}</span>
+      `;
+          container.appendChild(option);
+        });
+      }
+
+      function startDownload(quality, audioOnly) {
+        document.getElementById("dlProgress").classList.add("active");
+        document.getElementById("dlProgressText").textContent =
+          "Starting download...";
+        document.getElementById("dlProgressPercent").textContent = "0%";
+        document.getElementById("dlProgressFill").style.width = "0%";
+
+        // Call Python
+        if (window.nvpBridge) {
+          window.nvpBridge.downloadRequested(quality, audioOnly);
+        }
+      }
+
+      function updateDownloadProgress(percent, speed, eta) {
+        document.getElementById('dlProgressFill').style.width = percent + '%';
+        document.getElementById('dlProgressPercent').textContent = Math.round(percent) + '%';
+        document.getElementById('dlProgressText').textContent = speed ? `${speed} • ETA ${eta}` : 'Downloading...';
+
+        // Title-bar indicator
+        const tb = document.getElementById('tbDownload');
+        tb.classList.add('active');
+        document.getElementById('tbDlFill').style.width = percent + '%';
+        document.getElementById('tbDlText').textContent = Math.round(percent) + '%';
+      }
+
+      function downloadComplete(filePath) {
+        document.getElementById('dlProgressText').textContent = 'Download complete!';
+        document.getElementById('dlProgressPercent').textContent = '✓';
+        document.getElementById('dlProgressFill').style.width = '100%';
+        showToast('Downloaded! ✓');
+
+        // Title-bar indicator — show complete then hide
+        document.getElementById('tbDlFill').style.width = '100%';
+        document.getElementById('tbDlText').textContent = '✓';
+        setTimeout(() => document.getElementById('tbDownload').classList.remove('active'), 3000);
+
+        setTimeout(() => {
+          document.getElementById('dlProgress').classList.remove('active');
+        }, 3000);
+      }
+
+      function downloadError(error) {
+        document.getElementById("dlProgressText").textContent =
+          "Error: " + error;
+        document.getElementById("dlProgressPercent").textContent = "✗";
+        showToast("Download failed");
+      }
+
+      // === PLAYBACK CONTROLS ===
+      function togglePlay() {
+        if (video.paused || video.ended) {
+          video.play();
+        } else {
+          video.pause();
+        }
+      }
+
+      video.addEventListener("play", () => {
+        playBtn.textContent = "⏸";
+      });
+      video.addEventListener("pause", () => {
+        playBtn.textContent = "▶";
+      });
+      video.addEventListener("ended", () => {
+        playBtn.textContent = "▶";
+      });
+
+      video.addEventListener("canplay", () => {
+        loadingOverlay.classList.add("hidden");
+        video.play().catch(() => {});
+      });
+
+      // Error handler — prevents infinite loading spinner
+      video.addEventListener("error", () => {
+        const err = video.error;
+        let msg = 'Video format not supported';
+        if (err) {
+          switch (err.code) {
+            case 1: msg = 'Video loading aborted'; break;
+            case 2: msg = 'Network error while loading'; break;
+            case 3: msg = 'Video codec not supported'; break;
+            case 4: msg = 'Video source not found'; break;
+          }
+        }
+        loadingText.textContent = msg;
+        document.querySelector('.loading-spinner').style.display = 'none';
+        loadingBar.style.width = '0%';
+      });
+
+      video.addEventListener("timeupdate", () => {
+        const cur = formatTime(video.currentTime);
+        const dur = formatTime(video.duration);
+        timeDisplay.textContent = `${cur} / ${dur}`;
+
+        const pct = (video.currentTime / video.duration) * 100 || 0;
+        seekProgress.style.width = pct + "%";
+        seekThumb.style.left = pct + "%";
+      });
+
+      video.addEventListener("progress", () => {
+        if (video.buffered.length > 0) {
+          const end = video.buffered.end(video.buffered.length - 1);
+          const pct = (end / video.duration) * 100 || 0;
+          seekBuffered.style.width = pct + "%";
+        }
+      });
+
+      // Seek on click
+      seekBar.addEventListener("click", (e) => {
+        const rect = seekBar.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        video.currentTime = pct * video.duration;
+      });
+
+      // Volume
+      function setVolume(val) {
+        video.volume = val / 100;
+        updateVolumeIcon();
+      }
+
+      function toggleMute() {
+        video.muted = !video.muted;
+        updateVolumeIcon();
+      }
+
+      function updateVolumeIcon() {
+        const btn = document.getElementById("volumeBtn");
+        if (video.muted || video.volume === 0) btn.textContent = "🔇";
+        else if (video.volume < 0.5) btn.textContent = "🔉";
+        else btn.textContent = "🔊";
+      }
+
+      // Fullscreen — use Python bridge to maximize window
+      // (document.requestFullscreen is NOT supported in QWebEngineView)
+      function toggleFullscreen() {
+        if (window.nvpBridge) {
+          window.nvpBridge.maximizeRequested();
+          showToast('⛶');
+        }
+      }
+
+      // Download panel toggle
+      function toggleDownload() {
+        downloadPanel.classList.toggle("visible");
+      }
+
+      // Toast
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 1500);
+      }
+
+      // Time formatting
+      function formatTime(secs) {
+        if (isNaN(secs) || !isFinite(secs)) return "0:00";
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        return m + ":" + String(s).padStart(2, "0");
+      }
+
+      // === KEYBOARD SHORTCUTS ===
+      document.addEventListener("keydown", (e) => {
+        switch (e.key.toLowerCase()) {
+          case " ":
+          case "k":
+            e.preventDefault();
+            togglePlay();
+            break;
+          case "f":
+            toggleFullscreen();
+            break;
+          case "m":
+            toggleMute();
+            break;
+          case "arrowleft":
+            video.currentTime = Math.max(0, video.currentTime - 5);
+            showToast("-5s");
+            break;
+          case "arrowright":
+            video.currentTime = Math.min(video.duration, video.currentTime + 5);
+            showToast("+5s");
+            break;
+          case "arrowup":
+            video.volume = Math.min(1, video.volume + 0.1);
+            document.getElementById("volumeSlider").value = video.volume * 100;
+            updateVolumeIcon();
+            break;
+          case "arrowdown":
+            video.volume = Math.max(0, video.volume - 0.1);
+            document.getElementById("volumeSlider").value = video.volume * 100;
+            updateVolumeIcon();
+            break;
+          case "escape":
+            if (downloadPanel.classList.contains("visible")) toggleDownload();
+            break;
+        }
+      });
+
+      // Double-click to fullscreen
+      document
+        .getElementById("videoContainer")
+        .addEventListener("dblclick", toggleFullscreen);
+      // Single-click to play/pause
+      video.addEventListener("click", togglePlay);
+
+      // === THEME (called from Python) ===
+      function setTheme(theme) {
+        if (theme === "light") document.body.classList.add("light");
+        else document.body.classList.remove("light");
+      }
+
+      // === WINDOW CONTROLS (called from JS, handled in Python) ===
+      function nvpMinimize() {
+        if (window.nvpBridge) window.nvpBridge.minimizeRequested();
+      }
+      function nvpMaximize() {
+        if (window.nvpBridge) window.nvpBridge.maximizeRequested();
+      }
+      function nvpClose() {
+        if (window.nvpBridge) window.nvpBridge.closeRequested();
+      }
+    </script>
+  </body>
+</html>

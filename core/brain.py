@@ -15,32 +15,32 @@ from enum import Enum
 
 # import google.generativeai as genai  # REMOVED: Migrated to Llama 3.1 8B
 
-from .config import Config
-from .context_manager import ContextManager
-from .executor import CommandExecutor
-from .listener import AudioListener
-from .tts import TTSEngine
-from .llm_manager import LLMManager, LLMMode
+from config.settings import Config
+from core.cognition.context_manager import ContextManager
+from capabilities.executor import CommandExecutor
+from core.interface.voice_listener import AudioListener
+from core.interface.tts_engine import TTSEngine
+from capabilities.llm.llm_manager import LLMManager, LLMMode
 
 # Optional: Coqui TTS for cloned voice
 try:
-    from .tts_coqui import CoquiTTSEngine
+    from core.interface.tts_coqui import CoquiTTSEngine
     COQUI_AVAILABLE = True
 except ImportError:
     COQUI_AVAILABLE = False
 
 # Import refactored utility modules
-from .text_processing import TextProcessor, get_text_processor
-from .function_validation import FunctionValidator, get_function_validator
-from .command_detection import CommandDetector, get_command_detector
-from .clarification_handler import ClarificationHandler, get_clarification_handler
-from .response_cache import ResponseCache, get_response_cache
-from .conversation_history import ConversationHistoryBuilder, get_history_builder
-from .reference_resolver import ReferenceResolver, get_reference_resolver
+from core.cognition.text_processing import TextProcessor, get_text_processor
+from capabilities.function_validation import FunctionValidator, get_function_validator
+from core.cognition.command_detection import CommandDetector, get_command_detector
+from core.cognition.clarification_handler import ClarificationHandler, get_clarification_handler
+from core.cognition.response_cache import ResponseCache, get_response_cache
+from core.memory.conversation_memory import ConversationHistoryBuilder, get_history_builder
+from core.cognition.reference_resolver import ReferenceResolver, get_reference_resolver
 
 # Import input validator (optional, can be disabled via feature flag)
 try:
-    from .input_validator import InputValidator
+    from core.cognition.input_validator import InputValidator
     INPUT_VALIDATOR_AVAILABLE = True
 except ImportError:
     INPUT_VALIDATOR_AVAILABLE = False
@@ -48,7 +48,7 @@ except ImportError:
 
 # Import conditional handler (optional, can be disabled via feature flag)
 try:
-    from .conditional_handler import ConditionalHandler
+    from core.cognition.conditional_handler import ConditionalHandler
     CONDITIONAL_HANDLER_AVAILABLE = True
 except ImportError:
     CONDITIONAL_HANDLER_AVAILABLE = False
@@ -56,7 +56,7 @@ except ImportError:
 
 # Import dynamic preprocessor (optional, can be disabled via feature flag)
 try:
-    from .dynamic_preprocessor import DynamicPreprocessor, PreprocessingResult
+    from core.cognition.dynamic_preprocessor import DynamicPreprocessor, PreprocessingResult
     DYNAMIC_PREPROCESSOR_AVAILABLE = True
 except ImportError:
     DYNAMIC_PREPROCESSOR_AVAILABLE = False
@@ -65,7 +65,7 @@ except ImportError:
 
 # Import speaker enrollment (optional)
 try:
-    from .speaker_enrollment import SpeakerEnrollment
+    from core.interface.speaker_enrollment import SpeakerEnrollment
     SPEAKER_ENROLLMENT_AVAILABLE = True
 except ImportError:
     SPEAKER_ENROLLMENT_AVAILABLE = False
@@ -131,6 +131,7 @@ class NexaBrain:
         self.config = config
         self.state = NexaState.IDLE
         self.running = False
+        self._kernel = None  # Core AI Kernel (set by main.py via set_kernel())
         
         # Initialize components
         self.context_manager = ContextManager(config)
@@ -209,9 +210,11 @@ class NexaBrain:
         if THINKING_FEEDBACK_AVAILABLE and self.enable_thinking_feedback:
             # Create a wrapper function for TTS that matches expected signature
             # Signature: (text, ducking, silent) -> None
+            # CRITICAL: Use blocking=False so acknowledgment plays in background
+            # while LLM processing starts — prevents freezing the brain thread
             def speak_for_thinking(text: str, ducking: bool = True, silent: bool = False):
                 # silent=True keeps NEXA in THINKING state visually
-                self.tts.speak(text, blocking=True, ducking=ducking, silent=silent)
+                self.tts.speak(text, blocking=False, ducking=ducking, silent=silent)
             
             self.thinking_feedback = init_thinking_feedback(
                 speak_func=speak_for_thinking,
@@ -1327,7 +1330,22 @@ User: {user_text}"""
             user_text: User's transcribed speech
         """
         logger.debug(f"🎯 Processing: {user_text[:50]}")
+        _t_pipeline_start = time.perf_counter()  # ⏱️ Pipeline timing
         self._change_state(NexaState.THINKING)
+        
+        # === KERNEL: Register this as a high-priority voice input task ===
+        _kernel_task_id = None
+        if self._kernel:
+            from core.kernel import TaskEntry, PriorityLevel
+            task = TaskEntry(
+                name="voice_input",
+                priority=PriorityLevel.VOICE_INPUT,
+                gpu_required=False,  # LLM is already loaded in GPU — inference uses existing model
+                estimated_vram_mb=0,
+            )
+            _kernel_task_id = self._kernel.submit_task(task)
+            if _kernel_task_id:
+                self._kernel.activate_task(task)
         
         # PHASE 29 - Record user interaction for idle tracking
         self._record_user_interaction()
@@ -1345,6 +1363,8 @@ User: {user_text}"""
         if self.thinking_feedback:
             try:
                 self.thinking_feedback.start_thinking(user_text)
+                # Brief pause to let non-blocking TTS start playing the acknowledgment
+                time.sleep(0.05)  # 50ms is enough to start TTS, was 200ms
             except Exception as e:
                 logger.warning(f"Thinking feedback error: {e}")
         
@@ -1363,11 +1383,55 @@ User: {user_text}"""
                 self._emit_message("nexa", response)
                 # Store exit interaction in memory
                 self.context_manager.add_interaction(user_text, response, success=True)
+                # Complete kernel task before exit
+                if self._kernel and _kernel_task_id:
+                    self._kernel.complete_task(_kernel_task_id)
                 return  # Don't continue processing, app is shutting down
+            
+            # YouTube play commands — bypass LLM for reliable routing
+            # Whisper often mishears "play" as "layer/player/lay" so we match on "youtube" keyword
+            if 'youtube' in user_lower:
+                # Strip YouTube-related filler words to extract the actual query
+                yt_query = user_lower
+                for word in ['on youtube', 'youtube', 'play', 'play a', 'play some', 
+                             'layer', 'player', 'put', 'put on', 'open', 'search',
+                             'find', 'song', 'video', 'music', 'for me', 'please']:
+                    yt_query = yt_query.replace(word, '')
+                yt_query = ' '.join(yt_query.split()).strip()  # collapse whitespace
+                
+                if not yt_query:
+                    yt_query = 'popular music'  # fallback for bare "play youtube"
+                
+                logger.info(f"🎬 Direct YouTube command detected: '{user_text}' → query='{yt_query}'")
+                response = self.executor.play_youtube(query=yt_query)
+                self.context_manager.add_interaction(user_text, response, success=True)
+                
+                # End thinking feedback
+                if self.thinking_feedback:
+                    self.thinking_feedback.end_thinking(success=True)
+                
+                # Wait for any TTS to finish
+                if self.tts.is_speaking():
+                    wait_start = time.time()
+                    while self.tts.is_speaking() and (time.time() - wait_start) < 3.0:
+                        time.sleep(0.1)
+                    time.sleep(0.1)
+                
+                self._change_state(NexaState.SPEAKING)
+                self._emit_message("nexa", response)
+                self.tts.speak(f"Playing {yt_query} on YouTube!", blocking=True)
+                self._change_state(NexaState.LISTENING)
+                self.listener.resume_listening()
+                # Complete kernel task for YouTube path
+                if self._kernel and _kernel_task_id:
+                    self._kernel.complete_task(_kernel_task_id)
+                return
             
             # Use AI to understand intent and execute commands
             logger.debug("Calling _process_with_ai()...")
+            _t_ai_start = time.perf_counter()
             response = self._process_with_ai(user_text)
+            _t_ai_end = time.perf_counter()
             
             logger.debug(f"✅ Response ready ({len(response) if response else 0} chars)")
             
@@ -1383,11 +1447,13 @@ User: {user_text}"""
             if self.thinking_feedback:
                 self.thinking_feedback.end_thinking(success=True)
             
-            # CRITICAL: Stop any ongoing TTS (e.g. thinking feedback progress update)
-            # before starting the actual response to prevent race conditions
+            # Wait for thinking feedback TTS to finish naturally before response
+            # This prevents cutting off the acknowledgment phrase
             if self.tts.is_speaking():
-                logger.info("🛑 Stopping thinking feedback TTS before response")
-                self.tts.stop()
+                logger.info("⏳ Waiting for thinking feedback TTS to finish...")
+                wait_start = time.time()
+                while self.tts.is_speaking() and (time.time() - wait_start) < 3.0:
+                    time.sleep(0.1)
                 time.sleep(0.1)  # Brief pause to let audio channel fully release
             
             # Transition to SPEAKING state immediately so UI stops showing
@@ -1398,8 +1464,20 @@ User: {user_text}"""
             logger.debug(f"Emitting response to UI")
             self._emit_message("nexa", response)
             logger.info(f"🗣️ Starting TTS: {response[:50]}...")
+            _t_tts_start = time.perf_counter()
             self._speak_response(response)
+            _t_tts_end = time.perf_counter()
             logger.info(f"✅ TTS completed")
+            
+            # ⏱️ Performance summary
+            _t_pipeline_end = time.perf_counter()
+            _ai_ms = (_t_ai_end - _t_ai_start) * 1000
+            _tts_ms = (_t_tts_end - _t_tts_start) * 1000
+            _total_ms = (_t_pipeline_end - _t_pipeline_start) * 1000
+            logger.info(
+                f"⏱️ PERF │ AI={_ai_ms:.0f}ms │ TTS={_tts_ms:.0f}ms │ "
+                f"Total={_total_ms:.0f}ms │ \"{user_text[:40]}\""
+            )
         
         except Exception as e:
             logger.error(f"❌ EXCEPTION in _process_user_input: {e}", exc_info=True)
@@ -1420,6 +1498,10 @@ User: {user_text}"""
             # This ensures listener is ready for next command
             self.listener.resume_listening()
             logger.debug("🔊 Listener resumed after brain processing")
+            
+            # === KERNEL: Mark voice input task as complete ===
+            if self._kernel and _kernel_task_id:
+                self._kernel.complete_task(_kernel_task_id)
         
         logger.info("🎯 Finished processing user input")
         
@@ -2198,8 +2280,7 @@ For normal conversation (jokes, questions about topics, explanations), respond W
 User request: {user_text}"""
 
             # ⏱️ TIMING: Start LLM generation
-            import time
-            start_llm = time.time()
+            _t_llm_start = time.perf_counter()
             logger.debug(f"⏱️ Starting LLM generation...")
             
             # Get AI response using LLM Manager (auto-fallback to offline if needed)
@@ -2210,8 +2291,8 @@ User request: {user_text}"""
             )
             
             # ⏱️ TIMING: LLM generation complete
-            time_llm = time.time() - start_llm
-            logger.info(f"⏱️ LLM generation took {time_llm:.3f}s")
+            _t_llm_ms = (time.perf_counter() - _t_llm_start) * 1000
+            logger.info(f"⏱️ LLM generation: {_t_llm_ms:.0f}ms")
             
             # Store the mode that was actually used for this response
             self.llm_manager.current_mode = mode_used
@@ -2225,7 +2306,7 @@ User request: {user_text}"""
             logger.info(f"💬 Nexa: {response_text[:150]}{'...' if len(response_text) > 150 else ''}")
             
             # ⏱️ TIMING: Start JSON parsing
-            start_parse = time.time()
+            _t_parse_start = time.perf_counter()
             
             # Notify user if switched to offline mode
             if mode_used == LLMMode.OFFLINE and self.llm_manager.current_mode != LLMMode.OFFLINE:
@@ -2349,8 +2430,8 @@ User request: {user_text}"""
                     response_data = json.loads(json_match)
                     
                     # ⏱️ TIMING: JSON parsing complete
-                    time_parse = time.time() - start_parse
-                    logger.debug(f"⏱️ JSON parsing took {time_parse:.3f}s")
+                    _t_parse_ms = (time.perf_counter() - _t_parse_start) * 1000
+                    logger.debug(f"⏱️ JSON parsing: {_t_parse_ms:.0f}ms")
                     logger.debug(f"✅ JSON parsed successfully: {list(response_data.keys())}")
                     
                     # NEW: Dynamic function calling (Gemma3)
@@ -2400,7 +2481,7 @@ User request: {user_text}"""
                                    "For example, you can ask me to open an app, play music, take a screenshot, or control windows.")
                         
                         # ⏱️ TIMING: Start function execution
-                        start_exec = time.time()
+                        _t_exec_start = time.perf_counter()
                         
                         # 🧠 DYNAMIC FOLLOW-UP DETECTION (Universal - works for ALL commands)
                         last_action_result = self.context_manager.get_last_action()
@@ -2733,8 +2814,8 @@ User request: {user_text}"""
                             self._learn_from_action(func_name, func_params)
                             
                             # ⏱️ TIMING: Function execution complete
-                            time_exec = time.time() - start_exec
-                            logger.info(f"✅ Function '{func_name}' executed successfully ({time_exec:.3f}s)")
+                            _t_exec_ms = (time.perf_counter() - _t_exec_start) * 1000
+                            logger.info(f"✅ Function '{func_name}' executed successfully ({_t_exec_ms:.0f}ms)")
                             logger.info(f"   Result: {result[:100] if isinstance(result, str) else result}")
                             
                             # CRITICAL FIX V2: Prevent hallucinations by validating results
@@ -2779,9 +2860,9 @@ User request: {user_text}"""
                         conversation_response = response_data.get("response", "")
                         
                         # ⏱️ TIMING: Total processing time
-                        time_total = time.time() - start_llm
+                        _t_conv_ms = (time.perf_counter() - _t_parse_start) * 1000
                         logger.info(f"💬 Conversation response: {conversation_response[:50]}")
-                        logger.info(f"⏱️ Total processing time: {time_total:.3f}s")
+                        logger.info(f"⏱️ Conversation parse time: {_t_conv_ms:.0f}ms")
                         return conversation_response
                     
                     # OLD: Hardcoded keyword system - Keep for backwards compatibility
@@ -2952,7 +3033,6 @@ User request: {user_text}"""
                             
                             # Wait for internet to be fully available
                             # WiFi connects instantly but full internet/API access takes 4-10 seconds
-                            import time
                             logger.debug("⏳ Waiting for internet and API access to become available...")
                             
                             # Try up to 5 times with 2-second intervals (10 seconds total)
@@ -3540,7 +3620,33 @@ User request: {user_text}"""
         
         # Connect executor's close_content_window signal to window's slot
         self.executor.close_content_window_requested.connect(window._close_content_window)
-        logger.info("✅ Executor signals connected to window slots")
+        
+        # Connect NVP (NEXA Vision Player) launch signal
+        self.executor.launch_nvp_requested.connect(window._launch_nvp)
+        self.executor.launch_nvp_local_requested.connect(window._launch_nvp_local)
+        logger.info("✅ Executor signals connected to window slots (incl. NVP + local)")
+        
+        # Wire YouTube download progress to UI download bar (Phase 18)
+        if hasattr(self.executor, 'youtube_service') and hasattr(window, 'download_progress'):
+            yt = self.executor.youtube_service
+            dp = window.download_progress
+            
+            # Set callbacks on YouTube service — these fire from download worker thread
+            # The DownloadProgressWidget methods emit signals internally for thread safety
+            yt.on_download_progress = lambda pct, spd, eta, title: dp.update_progress(pct, spd, eta, title)
+            yt.on_download_complete = lambda title, path: dp.finish_download(title, path)
+            yt.on_download_error = lambda title, err: dp.fail_download(title, err)
+            
+            # Also wire show_download to be called when download starts
+            original_download = yt.download_youtube
+            def _download_with_ui(query, audio_only=False, quality="1080p"):
+                # Show the progress bar with a placeholder — the real title
+                # arrives via on_download_progress once yt-dlp resolves it
+                dp.show_download("Starting download...")
+                return original_download(query, audio_only, quality)
+            yt.download_youtube = _download_with_ui
+            
+            logger.info("✅ YouTube download progress wired to UI")
         
         logger.info("✅ Window reference set for UI control")
     
@@ -3555,12 +3661,115 @@ User request: {user_text}"""
         self.executor.gpu_monitor = gpu_monitor  # Pass to executor for usage queries
         logger.info("✅ GPU monitor reference set")
     
+    def set_kernel(self, kernel):
+        """
+        Set Core AI Kernel reference for task governance.
+        
+        The kernel gates proactive suggestions, manages priorities,
+        and tracks system state (locked, media active).
+        Also registers core capabilities so the kernel knows every
+        subsystem's entry point and default priority.
+        
+        Args:
+            kernel: NexaKernel instance
+        """
+        self._kernel = kernel
+        logger.info("🔷 Core AI Kernel connected to Brain")
+        
+        # ── Register capabilities so kernel has a full module map ──
+        from core.kernel import PriorityLevel
+        
+        kernel.register_capability(
+            "voice_input", self._process_user_input,
+            default_priority=PriorityLevel.VOICE_INPUT,
+            gpu_required=False,
+        )
+        kernel.register_capability(
+            "llm_inference", self.llm_manager.generate_response,
+            default_priority=PriorityLevel.USER_COMMAND,
+            gpu_required=True, estimated_vram_mb=4500,
+        )
+        kernel.register_capability(
+            "tts", self.tts.speak,
+            default_priority=PriorityLevel.USER_COMMAND,
+            gpu_required=False,
+        )
+        kernel.register_capability(
+            "youtube", self.executor.play_youtube,
+            default_priority=PriorityLevel.MEDIA_PLAYBACK,
+            gpu_required=False,
+        )
+        kernel.register_capability(
+            "music", self.executor.music_manager.play_song,
+            default_priority=PriorityLevel.MEDIA_PLAYBACK,
+            gpu_required=False,
+        )
+        kernel.register_capability(
+            "memory_cleanup", self.context_manager.smart_memory.prune_old_memories
+            if self.context_manager and self.context_manager.smart_memory else (lambda **_: None),
+            default_priority=PriorityLevel.BACKGROUND_SYNC,
+            gpu_required=False,
+        )
+        logger.info(f"🔷 Registered {len(kernel.get_capabilities())} capabilities with kernel")
+        
+        # Wire context_manager to kernel EventBus for memory.updated events
+        if hasattr(self, 'context_manager') and self.context_manager:
+            if hasattr(self.context_manager, 'set_event_bus'):
+                self.context_manager.set_event_bus(kernel.event_bus)
+        
+        # Part 3: Auto-cleanup old memories on startup (30-day retention)
+        self._schedule_memory_cleanup()
+    
+    def _schedule_memory_cleanup(self):
+        """Schedule background cleanup of memories older than 30 days."""
+        if not (self.context_manager and 
+                hasattr(self.context_manager, 'smart_memory') and 
+                self.context_manager.smart_memory):
+            return
+        
+        import threading
+        def _cleanup():
+            try:
+                # Submit as low-priority background task
+                if self._kernel:
+                    from core.kernel import TaskEntry, PriorityLevel
+                    task = TaskEntry(
+                        name="memory_cleanup",
+                        priority=PriorityLevel.BACKGROUND_SYNC,
+                        gpu_required=False,
+                    )
+                    task_id = self._kernel.submit_task(task)
+                    if task_id is None:
+                        logger.debug("🧹 Memory cleanup rejected by kernel (busy)")
+                        return
+                    self._kernel.activate_task(task)
+                
+                deleted = self.context_manager.smart_memory.prune_old_memories(days=30)
+                if deleted > 0:
+                    logger.info(f"🧹 Auto-cleanup: removed {deleted} memories older than 30 days")
+                else:
+                    logger.debug("🧹 Auto-cleanup: no old memories to remove")
+                
+                # Complete the kernel task
+                if self._kernel and task_id:
+                    self._kernel.complete_task(task_id)
+            except Exception as e:
+                logger.warning(f"🧹 Memory cleanup failed (non-critical): {e}")
+        
+        # Run after 5 second delay to let startup finish
+        import time
+        def _delayed_cleanup():
+            time.sleep(5)
+            _cleanup()
+        
+        threading.Thread(target=_delayed_cleanup, daemon=True, name="memory-cleanup").start()
+    
     def _on_llm_mode_changed(self, new_mode):
         """
         Handle LLM mode changes from llm_manager.
         Announces verbally and forwards to UI callbacks.
         """
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         
         mode_display = "online" if new_mode == LLMMode.ONLINE else "offline"
         logger.info(f"🔄 LLM mode changed to: {mode_display.upper()}")
@@ -3808,9 +4017,8 @@ User request: {user_text}"""
                 'friend', 'best friend', 'bestfriend', 'brother', 'sister', 
                 'mother', 'father', 'mom', 'dad', 'girlfriend', 'boyfriend',
                 'wife', 'husband', 'cousin', 'uncle', 'aunt', 'boss', 'family',
-                # Personal info
+                # Personal info (specific — avoids false positives on common words)
                 'birthday', 'favorite', 'favourite', 'hobby', 'hobbies',
-                'like', 'love', 'prefer', 'enjoy',
                 # Questions about people/self
                 'who is', 'who\'s', 'do you know', 'tell me about', 'what about',
                 'remember', 'what do you know', 'know about',
@@ -3823,6 +4031,7 @@ User request: {user_text}"""
             ]
             
             # DYNAMIC: Load personal names, locations, and education from user_prefs
+            # Uses cached triggers to avoid re-parsing JSON every call
             dynamic_triggers = self._get_dynamic_memory_triggers()
             memory_triggers.extend(dynamic_triggers)
             
@@ -3945,12 +4154,18 @@ User request: {user_text}"""
         """
         Dynamically build memory trigger keywords from user_prefs.json.
         
-        This replaces hardcoded names like 'saliha', 'waseem', 'nusrat' with
-        whatever is in the user's preferences — works for ANY user, not just Ali.
+        Uses a cached copy with a 5-minute TTL to avoid re-parsing JSON
+        on every single request. Cache is invalidated after 5 minutes.
         
         Returns:
             list: Dynamic trigger keywords from personal data
         """
+        # Return cached triggers if still fresh (5-min TTL)
+        now = time.time()
+        if hasattr(self, '_cached_memory_triggers') and self._cached_memory_triggers is not None:
+            if hasattr(self, '_cached_memory_triggers_time') and (now - self._cached_memory_triggers_time) < 300:
+                return self._cached_memory_triggers
+        
         triggers = []
         try:
             if not hasattr(self, 'config') or not self.config:
@@ -4004,6 +4219,11 @@ User request: {user_text}"""
                 if t not in seen:
                     seen.add(t)
                     unique_triggers.append(t)
+            
+            # Cache the result
+            self._cached_memory_triggers = unique_triggers
+            self._cached_memory_triggers_time = now
+            logger.debug(f"🧠 Cached {len(unique_triggers)} dynamic memory triggers")
             
             return unique_triggers
             
@@ -4509,6 +4729,22 @@ User request: {user_text}"""
                 logger.debug("Not in IDLE state, skipping proactive")
                 return False
             
+            # Kernel gate: submit as low-priority task — kernel may reject
+            if self._kernel:
+                from core.kernel import TaskEntry, PriorityLevel
+                task = TaskEntry(
+                    name="idle_suggestion",
+                    priority=PriorityLevel.IDLE_SUGGESTION,
+                    gpu_required=False,
+                )
+                task_id = self._kernel.submit_task(task)
+                if task_id is None:
+                    logger.info("💜 Proactive suggestion REJECTED by kernel")
+                    return False
+                # Activate the task immediately (we'll complete it after speaking)
+                self._kernel.activate_task(task)
+                self._current_proactive_task_id = task_id
+            
             # Build context
             session_duration = self.idle_monitor.get_session_duration() if self.idle_monitor else 0
             interaction_count = self.idle_monitor.stats.total_interactions if self.idle_monitor else 0
@@ -4547,13 +4783,26 @@ User request: {user_text}"""
                         clarification_question=suggestion.message
                     )
                 
+                # Complete the kernel task now that suggestion is delivered
+                if self._kernel and hasattr(self, '_current_proactive_task_id'):
+                    self._kernel.complete_task(self._current_proactive_task_id)
+                    del self._current_proactive_task_id
+                
                 return True
             
             logger.info("💜 No proactive suggestion generated (no matching criteria)")
+            # Complete the kernel task if no suggestion was made
+            if self._kernel and hasattr(self, '_current_proactive_task_id'):
+                self._kernel.complete_task(self._current_proactive_task_id)
+                del self._current_proactive_task_id
             return False
             
         except Exception as e:
             logger.error(f"Error in proactive opportunity: {e}")
+            # Clean up kernel task on error
+            if self._kernel and hasattr(self, '_current_proactive_task_id'):
+                self._kernel.cancel_task(self._current_proactive_task_id)
+                del self._current_proactive_task_id
             return False
     
     def _record_user_interaction(self):
@@ -4636,6 +4885,11 @@ User request: {user_text}"""
         # Only check when in IDLE state
         if self.state != NexaState.IDLE:
             logger.info(f"💜 Proactive check: SKIPPED (state={self.state.value}, need IDLE)")
+            return
+        
+        # Kernel gate: check lock state, media playback, GPU usage
+        if self._kernel and not self._kernel.can_run_idle():
+            logger.info("💜 Proactive check: BLOCKED by kernel (locked/media/GPU)")
             return
         
         if not self.enable_proactive or not self.idle_monitor:

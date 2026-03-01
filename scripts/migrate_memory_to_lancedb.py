@@ -54,7 +54,7 @@ def main():
     print("\n🧠 Initializing Smart Memory (LanceDB)...")
     
     try:
-        from core.smart_memory import SmartMemoryManager
+        from core.memory import SmartMemoryManager
         
         sm = SmartMemoryManager(data_dir)
         print("   ✅ Smart Memory initialized")

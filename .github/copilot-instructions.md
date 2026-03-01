@@ -10,16 +10,18 @@ Nexa is a **Windows voice-controlled AI desktop assistant** using Llama 3.1 8B (
 
 ### Core Components (`core/`)
 
-| Component | Purpose |
-|-----------|---------|
-| `brain.py` | Central orchestrator - manages state machine (`NexaState`), coordinates all components, processes LLM responses |
-| `llm_manager.py` | Ollama interface - single model architecture (Llama 3.1 8B for both online/offline), response caching, model pre-warming |
-| `executor.py` | Command execution hub - delegates to specialized controllers, inherits `QObject` for thread-safe signals |
-| `function_registry.py` | 86+ registered functions - maps AI function calls to executor methods with skill tracking |
-| `listener.py` | Audio input - Faster-Whisper GPU transcription, Silero VAD, optional speaker verification |
-| `tts.py` | Kokoro TTS - af_heart voice, pygame playback, subprocess isolation to avoid CUDA DLL conflicts |
-| `context_manager.py` | Memory + history - integrates Smart Memory (LanceDB), action stack, conversation context |
-| `prompt_builder.py` | LLM prompt construction - function catalog injection, error handling rules |
+| Component              | Purpose                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `brain.py`             | Central orchestrator - manages state machine (`NexaState`), coordinates all components, processes LLM responses          |
+| `llm_manager.py`       | Ollama interface - single model architecture (Llama 3.1 8B for both online/offline), response caching, model pre-warming |
+| `executor.py`          | Command execution hub - delegates to specialized controllers, inherits `QObject` for thread-safe signals                 |
+| `function_registry.py` | 86+ registered functions - maps AI function calls to executor methods with skill tracking                                |
+| `listener.py`          | Audio input - Faster-Whisper GPU transcription, Silero VAD, optional speaker verification                                |
+| `tts.py`               | Kokoro TTS - af_heart voice, pygame playback, subprocess isolation to avoid CUDA DLL conflicts                           |
+| `context_manager.py`   | Memory + history - integrates Smart Memory (LanceDB), action stack, conversation context                                 |
+| `prompt_builder.py`    | LLM prompt construction - function catalog injection, error handling rules                                               |
+| `youtube_service.py`   | YouTube play/search/download via yt-dlp (no API key), quality presets, progress hooks                                    |
+| `web_scraper.py`       | Enhanced web search - DuckDuckGo + BeautifulSoup page scraping, returns actual content                                   |
 
 ### Data Flow
 
@@ -31,6 +33,7 @@ Microphone → AudioListener → NexaBrain.process_input() → LLMManager.genera
 ### Smart Memory System (`core/smart_memory/`)
 
 Uses LanceDB with sentence-transformers for semantic search:
+
 - `SmartMemoryManager` - persistent vector storage
 - `IntentState` - tracks multi-turn intent context
 - `IntelligentLearner` - auto-learns from successful interactions
@@ -53,6 +56,7 @@ self.register(
 ### Controller Modules
 
 System features are split into specialized controllers in `core/`:
+
 - `volume_controller.py`, `brightness_controller.py`, `wifi_controller.py`
 - `application_controller.py`, `screen_controller.py`, `game_manager.py`
 
@@ -120,6 +124,7 @@ User data writes to `%LOCALAPPDATA%\Nexa AI` (UAC-safe).
 ## UI Architecture (`ui/`)
 
 - `nexa_modern_window.py` - Main window, voice orb visualization
+- `nexa_vision_player.py` - NEXA Vision Player (NVP) — dual-mode video player: YouTube (iframe embed, online) + Local (QMediaPlayer, offline). Movie library scans `D:\Movie`
 - `nexa_pet_widget.py` - Desktop Companion (Nexa Companion) with 8 states (idle, listening, thinking, speaking, etc.)
 - All UI inherits from PySide6 (Qt6) - use signals for cross-thread communication
 

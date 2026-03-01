@@ -33,6 +33,8 @@ class TaskType(Enum):
     """Classification of task types for appropriate feedback."""
     GENERAL = "general"
     SEARCH = "search"
+    MEDIA = "media"
+    DOWNLOAD = "download"
     SYSTEM = "system"
     COMPLEX = "complex"
     CREATIVE = "creative"
@@ -98,23 +100,38 @@ class ThinkingFeedback:
         # Task type keywords for classification
         self._init_task_keywords()
         
-        logger.info("🧠 ThinkingFeedback initialized (Phase 28)")
+        logger.info("🧠 ThinkingFeedback initialized (Phase 29)")
     
     def _init_task_keywords(self):
         """Initialize keyword patterns for task classification."""
         self.task_keywords: Dict[TaskType, list] = {
+            # SEARCH must come before SYSTEM so "find" doesn't lose to system keywords
             TaskType.SEARCH: [
                 "search", "find", "look up", "lookup", "what is", "who is",
                 "where is", "how to", "weather", "news", "define", "meaning"
             ],
+            # MEDIA is checked before SYSTEM so "play"/"watch"/"music" route here
+            TaskType.MEDIA: [
+                "play", "watch", "youtube", "video", "music", "song",
+                "pause", "resume", "next song", "previous song", "skip song",
+                "stop music", "stop video", "volume up", "volume down",
+                "turn up the music", "turn down the music",
+            ],
+            # DOWNLOAD checked before COMPLEX to keep it distinct
+            TaskType.DOWNLOAD: [
+                "download", "save video", "save audio", "export video",
+                "save to", "download video", "download audio",
+                "grab the video", "get the video",
+            ],
             TaskType.SYSTEM: [
-                "open", "close", "launch", "start", "stop", "volume", "brightness",
-                "screenshot", "maximize", "minimize", "wifi", "bluetooth", "mute",
+                "open", "close", "launch", "start", "stop",
+                "set", "turn", "change", "increase", "decrease", "toggle",
+                "screenshot", "maximize", "minimize", "mute",
                 "unmute", "lock", "shutdown", "restart", "sleep"
             ],
             TaskType.COMPLEX: [
                 "generate", "create file", "write code", "analyze", "summarize",
-                "compare", "list all", "show all", "export", "download"
+                "compare", "list all", "show all", "export",
             ],
             TaskType.CREATIVE: [
                 "write", "compose", "draft", "suggest", "help me with",
@@ -144,27 +161,33 @@ class ThinkingFeedback:
             "tell me a joke", "make me laugh", "cheer me up",
             # Memory/personal queries (fast — no acknowledgement needed)
             "what's my name", "who am i", "my name", "about me",
-            "what do you know", "do you remember", "who is",
-            "tell me about", "my friend", "my father", "my mother",
+            "what do you know",
+            "my friend", "my father", "my mother",
             "my brother", "my sister", "my best friend",
-            "favorite", "favourite", "remember",
+            "favorite", "favourite",
         ]
         
         # Quick info queries — these return instantly, no feedback needed
+        # IMPORTANT: Only QUERY patterns, not ACTION patterns!
+        # "battery" is a query, "set brightness to 80" is an ACTION
         self.quick_info_patterns = [
             "what time", "what's the time", "current time", "the time",
             "what date", "what's the date", "today's date", "the date",
-            "battery", "battery level", "battery status", "how much battery",
+            "battery level", "battery status", "how much battery",
             "what's my battery", "battery percentage",
-            "volume", "current volume", "what's the volume",
-            "brightness", "current brightness", "what's the brightness",
-            "system info", "system information", "cpu", "ram", "gpu",
-            "wifi status", "wifi", "am i connected",
+            "current volume", "what's the volume",
+            "current brightness", "what's the brightness",
+            "system info", "system information",
+            "am i connected",
         ]
     
     def _is_conversation(self, user_input: str) -> bool:
         """
         Check if this is casual conversation or quick info query (no acknowledgement needed).
+        
+        CRITICAL: Task keywords are checked FIRST — if input contains action verbs
+        like 'set', 'play', 'open', 'download', etc., it's ALWAYS a task (not conversation),
+        even if it also contains words like 'brightness' or 'volume'.
         
         Args:
             user_input: User's input text
@@ -173,9 +196,16 @@ class ThinkingFeedback:
             True if this is conversation/quick query, False if it's a task needing feedback
         """
         input_lower = user_input.lower().strip()
-        
-        # Short inputs (under 4 words) that don't match task keywords are likely conversation
         word_count = len(input_lower.split())
+        
+        # *** PRIORITY CHECK: Task keywords override EVERYTHING ***
+        # If input contains ANY task keyword (set, play, open, download, etc.)
+        # it's a task that needs acknowledgment, regardless of other patterns
+        for keywords in self.task_keywords.values():
+            for keyword in keywords:
+                if keyword in input_lower:
+                    logger.info(f"🎯 Task keyword '{keyword}' found — NOT conversation")
+                    return False
         
         # Check if it matches conversation patterns
         for pattern in self.conversation_patterns:
@@ -187,14 +217,9 @@ class ThinkingFeedback:
             if pattern in input_lower:
                 return True
         
-        # Very short inputs without task keywords = conversation
+        # Very short inputs (1-3 words) without task keywords = conversation
         if word_count <= 3:
-            # Check if any task keyword is present
-            for keywords in self.task_keywords.values():
-                for keyword in keywords:
-                    if keyword in input_lower:
-                        return False  # Has task keyword, not conversation
-            return True  # Short and no task keywords = conversation
+            return True
         
         return False
     
@@ -245,7 +270,7 @@ class ThinkingFeedback:
         
         # Skip acknowledgement for casual conversation
         if self._is_conversation(user_input):
-            logger.debug(f"💬 Conversation detected, skipping acknowledgement: '{user_input[:50]}...'")
+            logger.info(f"💬 Conversation/quick-query — skipping acknowledgement: '{user_input[:50]}'")
             return False
         
         with self.lock:
@@ -268,11 +293,7 @@ class ThinkingFeedback:
             logger.info(f"🎯 Acknowledging ({task_type.value}): '{phrase}'")
             
             try:
-                # Issue 3 Fix: Add natural pause before speaking (feels less robotic)
-                # This gives the visual THINKING state time to display
-                time.sleep(self.acknowledgment_delay)
-                
-                # Issue 1 Fix: Speak with silent=True so we stay in THINKING state
+                # Speak with silent=True so we stay in THINKING state
                 # The TTS won't trigger state callbacks, keeping the thinking animation
                 self.speak_func(phrase, True, True)  # (text, ducking=True, silent=True)
                 self.current_context.acknowledged = True

@@ -187,8 +187,10 @@ WHISPER_COMPUTE_TYPE=float16
 | **Login & Security** | User registration, password auth, lock screen | ✅ Complete |
 | **File Management** | Create/move/copy/delete/rename, search, organize, compress (Phase 21) | ✅ Complete |
 | **Companion Mode** | Thinking feedback, proactive engagement (Phases 28-29) | ✅ Complete |
+| **YouTube Integration** | Play, search, download (quality options), progress bar (Phase 18) | ✅ Complete |
+| **Enhanced Web Search** | Intelligent search with Wikipedia API, IMDB/SO extractors, intent routing (Phase 18) | ✅ Complete |
 
-### Total Function Count: **158 Registered Functions**
+### Total Function Count: **170 Registered Functions**
 
 ---
 
@@ -318,6 +320,34 @@ WHISPER_COMPUTE_TYPE=float16
 "Create formatted PDF"
 
 "Exit Content Mode"
+```
+
+### YouTube (Online Mode Only)
+
+```
+"Play [song/video name] on YouTube"
+"Play Thunder on YouTube"
+"Search YouTube for cooking tutorials"
+"Play number 3" (after search)
+"Get video info"
+"Download this video"
+"Download this video in 4K"
+"Download this video in 720p"
+"Download the song as MP3"
+"Download audio from [video name]"
+"What's the download status?"
+"Show YouTube queue"
+"Clear YouTube queue"
+```
+
+### Smart Web Search (Online Mode Only)
+
+```
+"What is quantum computing?"
+"Who won the World Cup 2024?"
+"Tell me about [topic]"
+"Read this page: [URL]"
+"Scrape [URL]"
 ```
 
 ### Games

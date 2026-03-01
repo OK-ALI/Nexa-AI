@@ -4,11 +4,11 @@ Contains all core logic components for the AI assistant.
 """
 
 from .brain import NexaBrain
-from .config import Config
-from .context_manager import ContextManager
-from .executor import CommandExecutor
-from .listener import AudioListener
-from .tts import TTSEngine
+from config.settings import Config
+from core.cognition.context_manager import ContextManager
+from capabilities.executor import CommandExecutor
+from core.interface.voice_listener import AudioListener
+from core.interface.tts_engine import TTSEngine
 
 __all__ = [
     'NexaBrain',

@@ -29,7 +29,7 @@ def test_memory_pipeline():
     # ==========================================
     print("\n[1/6] Initializing Smart Memory Manager...")
     try:
-        from core.smart_memory.memory_manager import SmartMemoryManager
+        from core.memory.memory_manager import SmartMemoryManager
         data_dir = Path("data")
         sm = SmartMemoryManager(data_dir)
         print("  ✅ SmartMemoryManager initialized")
@@ -42,7 +42,7 @@ def test_memory_pipeline():
     # ==========================================
     print("\n[2/6] Checking knowledge table...")
     try:
-        from core.smart_memory.memory_store import MemoryStore
+        from core.memory.memory_store import MemoryStore
         knowledge_count = sm.store._get_table(MemoryStore.TABLE_KNOWLEDGE).count_rows()
         print(f"  📊 Knowledge table has {knowledge_count} rows")
         if knowledge_count == 0:

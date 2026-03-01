@@ -19,22 +19,23 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer, Slot, Signal, QPoint, QSize, QPropertyAnimation, QEasingCurve, QMimeData, QRect
 from PySide6.QtGui import QFont, QMouseEvent, QColor, QDrag
-from PySide6.QtWidgets import QGraphicsDropShadowEffect
+from PySide6.QtWidgets import QGraphicsDropShadowEffect, QGraphicsOpacityEffect
 
 from core.brain import NexaBrain, NexaState
-from core.config import Config
-from ui.nexa_orb_ui import NexaOrbWidget
+from config.settings import Config
+from ui.widgets.nexa_orb_ui import NexaOrbWidget
 try:
-    from ui.web_orb_widget import WebOrbWidget, WEBENGINE_AVAILABLE
+    from ui.widgets.web_orb_widget import WebOrbWidget, WEBENGINE_AVAILABLE
 except ImportError:
     WEBENGINE_AVAILABLE = False
 from ui.music_indicator import MusicIndicatorWidget
-from ui.live2d_widget import Live2DPetWidget
-from ui.sprite_pet_widget import SpritePetWidget
-from ui.pet_config import PetConfig, PetType
-from ui.pet_quick_actions import PetQuickActions
+from ui.widgets.download_progress import DownloadProgressWidget
+from ui.widgets.live2d_widget import Live2DPetWidget
+from ui.pet.sprite_pet_widget import SpritePetWidget
+from ui.pet.pet_config import PetConfig, PetType
+from ui.pet.pet_quick_actions import PetQuickActions
 from Themes.theme_manager import get_theme_manager
-from core.live2d_engine import set_sdk_path, get_sample_model_path
+from capabilities.vision.live2d_engine import set_sdk_path, get_sample_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,10 @@ class NexaModernWindow(QMainWindow):
         status_section = self._create_status_section()
         main_content_layout.addWidget(status_section)
         
+        # --- Download progress bar (above bottom spacer, below status) ---
+        self.download_progress = DownloadProgressWidget()
+        main_content_layout.addWidget(self.download_progress)
+        
         # Spacer at bottom
         main_content_layout.addSpacing(20)
         
@@ -304,6 +309,11 @@ class NexaModernWindow(QMainWindow):
                 'tooltip': "Open Music Player",
                 'callback': self._toggle_music_player,
             },
+            'guide': {
+                'icon': lambda: self._icon_mgr.get_icon('guide', icon_size),
+                'tooltip': "NEXA Guidelines",
+                'callback': self._toggle_guidelines,
+            },
         }
         
         # Load saved button placement from preferences
@@ -369,6 +379,7 @@ class NexaModernWindow(QMainWindow):
         self.pet_btn = self._sidebar_buttons.get('companion')
         self.memory_btn = self._sidebar_buttons.get('memory')
         self.music_btn = self._sidebar_buttons.get('music')
+        self.guide_btn = self._sidebar_buttons.get('guide')
         
         layout.addStretch()
         
@@ -380,7 +391,7 @@ class NexaModernWindow(QMainWindow):
         Returns:
             Tuple of (sidebar_order, topbar_order) lists.
         """
-        default_order = ['theme', 'companion', 'memory', 'music']
+        default_order = ['theme', 'companion', 'memory', 'music', 'guide']
         try:
             prefs_path = Path("config/ui_preferences.json")
             if prefs_path.exists():
@@ -872,16 +883,35 @@ class NexaModernWindow(QMainWindow):
         self._lock_screen.unlocked.connect(self._on_unlocked)
         logger.info("🔒 Lock screen attached to main window")
     
+    def set_kernel(self, kernel):
+        """
+        Set Core AI Kernel reference for system state notifications.
+        
+        The window notifies the kernel when NEXA is locked/unlocked
+        so the kernel can block idle suggestions during lock.
+        
+        Args:
+            kernel: NexaKernel instance
+        """
+        self._kernel = kernel
+        logger.info("🔷 Core AI Kernel connected to Window")
+    
     def _activate_lock_screen(self):
         """Show the lock screen overlay."""
         if hasattr(self, '_lock_screen'):
             self._lock_screen.activate()
+            # Notify kernel: block idle suggestions while locked
+            if hasattr(self, '_kernel') and self._kernel:
+                self._kernel.set_locked(True)
         else:
             logger.warning("Lock screen not initialized (no auth_manager)")
     
     def _on_unlocked(self):
         """Handle successful unlock."""
         logger.info("🔓 Session unlocked")
+        # Notify kernel: re-enable idle suggestions
+        if hasattr(self, '_kernel') and self._kernel:
+            self._kernel.set_locked(False)
     
     def resizeEvent(self, event):
         """Keep lock screen covering the full window on resize."""
@@ -955,7 +985,7 @@ class NexaModernWindow(QMainWindow):
     @Slot()
     def _toggle_mode(self):
         """Toggle between online and offline modes."""
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         
         current_mode = self.brain.llm_manager.current_mode
         
@@ -970,7 +1000,7 @@ class NexaModernWindow(QMainWindow):
     
     def _on_mode_changed(self, new_mode):
         """Handle mode change callback from brain."""
-        from core.llm_manager import LLMMode
+        from capabilities.llm.llm_manager import LLMMode
         tm = self.theme_manager
         
         if new_mode == LLMMode.ONLINE:
@@ -1396,16 +1426,11 @@ class NexaModernWindow(QMainWindow):
     # --- Theme Management ---
     @Slot()
     def _toggle_theme_manual(self):
-        """Toggle theme manually via button click"""
-        new_theme = self.theme_manager.toggle_theme()
-        self._is_dark_theme = new_theme == 'dark'
-        # Update theme button icon
-        self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 28))
-        # Update music button icon for theme
-        self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 28))
-        if hasattr(self, 'orb_widget'):
-            self.orb_widget.update()  # Force orb repaint
-        logger.info(f"🎨 Theme toggled manually: {new_theme}")
+        """Toggle theme with crossfade transition animation."""
+        # Determine the new theme before animating
+        current = self.theme_manager.get_theme_name()
+        new_theme = 'light' if current == 'dark' else 'dark'
+        self._animate_theme_switch(new_theme)
     
     def switch_theme(self, theme_name: str = None):
         """
@@ -1415,17 +1440,59 @@ class NexaModernWindow(QMainWindow):
             theme_name: 'dark' or 'light', or None to toggle
         """
         if theme_name:
-            self.theme_manager.set_theme(theme_name)
-            self._is_dark_theme = theme_name == 'dark'
-            # Update theme button icon
-            self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 28))
-            # Update music button icon for theme
-            self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 28))
-            if hasattr(self, 'orb_widget'):
-                self.orb_widget.update()  # Force orb repaint
-            logger.info(f"🎤 Theme switched via voice: {theme_name}")
+            self._animate_theme_switch(theme_name)
         else:
             self._toggle_theme_manual()
+    
+    def _animate_theme_switch(self, new_theme: str):
+        """Smooth crossfade transition when switching themes."""
+        # Avoid re-entrance during animation
+        if hasattr(self, '_theme_anim_running') and self._theme_anim_running:
+            return
+        self._theme_anim_running = True
+        
+        # Attach opacity effect to central widget
+        opacity_effect = QGraphicsOpacityEffect(self.central_widget)
+        opacity_effect.setOpacity(1.0)
+        self.central_widget.setGraphicsEffect(opacity_effect)
+        
+        # Phase 1: Fade out (1.0 → 0.25) over 150ms
+        fade_out = QPropertyAnimation(opacity_effect, b"opacity")
+        fade_out.setDuration(150)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.25)
+        fade_out.setEasingCurve(QEasingCurve.Type.InQuad)
+        
+        def _apply_and_fade_in():
+            # Apply the actual theme change at lowest opacity
+            self.theme_manager.set_theme(new_theme)
+            self._is_dark_theme = new_theme == 'dark'
+            # Update icons
+            self.theme_btn.setIcon(self._icon_mgr.get_theme_icon(self._is_dark_theme, 28))
+            self.music_btn.setIcon(self._icon_mgr.get_icon('music_dark' if self._is_dark_theme else 'music_light', 28))
+            if hasattr(self, 'orb_widget'):
+                self.orb_widget.update()
+            
+            # Phase 2: Fade in (0.25 → 1.0) over 200ms
+            fade_in = QPropertyAnimation(opacity_effect, b"opacity")
+            fade_in.setDuration(200)
+            fade_in.setStartValue(0.25)
+            fade_in.setEndValue(1.0)
+            fade_in.setEasingCurve(QEasingCurve.Type.OutQuad)
+            
+            def _cleanup():
+                # Remove opacity effect to restore normal rendering
+                self.central_widget.setGraphicsEffect(None)
+                self._theme_anim_running = False
+                logger.info(f"🎨 Theme transition complete: {new_theme}")
+            
+            fade_in.finished.connect(_cleanup)
+            self._theme_fade_in = fade_in  # prevent GC
+            fade_in.start()
+        
+        fade_out.finished.connect(_apply_and_fade_in)
+        self._theme_fade_out = fade_out  # prevent GC
+        fade_out.start()
     
     def _apply_theme(self):
         """Apply current theme to all UI elements"""
@@ -1525,6 +1592,10 @@ class NexaModernWindow(QMainWindow):
         # Update glow color to match new theme's idle color
         self._glow_color = QColor(tm.get_color('orb', 'idle'))
         
+        # Update download progress bar theme
+        if hasattr(self, 'download_progress'):
+            self.download_progress.apply_theme(self._is_dark_theme)
+        
         # Update mode button (reapply current mode styling)
         current_mode = self.brain.llm_manager.get_current_mode()
         self._on_mode_changed(current_mode)
@@ -1621,6 +1692,91 @@ class NexaModernWindow(QMainWindow):
             # Reset flag even on error
             if hasattr(self.brain.executor, '_content_mode_exiting'):
                 self.brain.executor._content_mode_exiting = False
+    
+    # --- NVP (NEXA Vision Player) ---
+    @Slot(str, str, str, str, str, str, str)
+    def _launch_nvp(self, file_path, title, channel, duration, video_url, video_id, formats_json):
+        """
+        Launch NEXA Vision Player on the GUI thread.
+        Called via signal from executor when a YouTube video is ready.
+        """
+        try:
+            from ui.nexa_vision_player import get_or_create_nvp
+            import json
+            
+            nvp = get_or_create_nvp(self)
+            if nvp is None:
+                logger.warning("⚠️ NVP not available, falling back to browser")
+                import webbrowser
+                webbrowser.open(video_url or f"https://www.youtube.com/watch?v={video_id}")
+                return
+            
+            # Set video info for download panel
+            nvp._video_info = {
+                'title': title,
+                'channel': channel,
+                'duration': duration,
+                'url': video_url,
+                'id': video_id,
+                'file_path': file_path,
+            }
+            
+            # Set YouTube service for downloads
+            if hasattr(self, 'brain') and hasattr(self.brain, 'executor'):
+                nvp.set_youtube_service(self.brain.executor.youtube_service)
+            
+            # Pass kernel reference for media state tracking
+            if hasattr(self, '_kernel') and self._kernel:
+                nvp.set_kernel(self._kernel)
+            
+            # Play the video
+            nvp.play_video_file(file_path, title, channel, duration)
+            
+            # Set download formats — just cache them; NVP will send to JS
+            # after page loads via _on_page_loaded → set_download_formats
+            try:
+                formats = json.loads(formats_json) if formats_json else []
+                if formats:
+                    nvp.set_download_formats(formats)
+            except Exception as e:
+                logger.warning(f"Error setting download formats: {e}")
+            
+            # Show the window
+            nvp.show()
+            nvp.raise_()
+            nvp.activateWindow()
+            
+            logger.info(f"🎬 NVP launched: {title}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error launching NVP: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to browser
+            try:
+                import webbrowser
+                webbrowser.open(video_url or f"https://www.youtube.com/watch?v={video_id}")
+            except Exception:
+                pass
+    
+    @Slot(str, str)
+    def _launch_nvp_local(self, file_path: str, title: str):
+        """Launch NVP for local video playback."""
+        try:
+            from ui.nexa_vision_player import get_or_create_nvp
+            
+            nvp = get_or_create_nvp(self)
+            if nvp is None:
+                logger.warning("⚠️ NVP not available for local playback")
+                return
+            
+            nvp.play_local_file(file_path, title)
+            logger.info(f"🎬 NVP local launched: {title}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error launching NVP local: {e}")
+            import traceback
+            traceback.print_exc()
     
     # --- Pet Widget Management ---
     def _toggle_pet(self):
@@ -1743,6 +1899,14 @@ class NexaModernWindow(QMainWindow):
                     parent=None
                 )
                 self.memory_panel.closed.connect(lambda: logger.info("🧠 Neural Memory Panel closed"))
+                
+                # Wire EventBus for live memory sync
+                kernel = getattr(self.brain, '_kernel', None)
+                if kernel and hasattr(kernel, 'event_bus'):
+                    self.memory_panel.set_event_bus(kernel.event_bus)
+                    # Also connect context_manager to EventBus for publishing
+                    if context and hasattr(context, 'set_event_bus'):
+                        context.set_event_bus(kernel.event_bus)
             
             # Toggle visibility with smooth transitions
             if self.memory_panel.isVisible():
@@ -1807,6 +1971,23 @@ class NexaModernWindow(QMainWindow):
                 logger.info("🎵 Music player shown")
         except Exception as e:
             logger.error(f"Failed to toggle music player: {e}")
+    
+    @Slot()
+    def _toggle_guidelines(self):
+        """Toggle the NEXA Guidelines panel."""
+        try:
+            from ui.nexa_guidelines import get_or_create_guidelines
+            
+            panel = get_or_create_guidelines(self)
+            
+            if panel.isVisible():
+                panel._close_panel()
+                logger.info("📖 Guidelines panel hidden")
+            else:
+                panel.show_animated()
+                logger.info("📖 Guidelines panel shown")
+        except Exception as e:
+            logger.error(f"Failed to toggle guidelines: {e}")
     
     def _setup_pet_quick_actions(self):
         """

@@ -1,30 +1,50 @@
 @echo off
-REM Nexa Launcher Script for Windows
-REM This script activates the virtual environment and runs Nexa
+REM ============================================
+REM   NEXA AI Launcher v3.0
+REM   Layered Architecture + Core AI Kernel
+REM ============================================
 
 echo.
-echo ========================
-echo   Starting Nexa AI...
-echo ========================
+echo ================================
+echo   Starting NEXA AI v3.0...
+echo   Core AI Kernel:    ACTIVE
+echo   Priority System:   ACTIVE
+echo   GPU Scheduler:     ACTIVE
+echo   Layered Arch:      ACTIVE
+echo ================================
 echo.
 
 cd /d "%~dp0"
 
+REM Check virtual environment
 if not exist ".venv\Scripts\python.exe" (
     echo [ERROR] Virtual environment not found!
-    echo Please run: python -m venv .venv
-    echo Then run: .venv\Scripts\pip install -r requirements.txt
+    echo.
+    echo Please run the following commands:
+    echo   python -m venv .venv
+    echo   .venv\Scripts\pip install -r requirements.txt
+    echo.
     pause
     exit /b 1
 )
 
-echo [OK] Using virtual environment Python
+REM Activate virtual environment
+call .venv\Scripts\activate
+
+REM Set UTF-8 encoding for kernel logs
+set PYTHONIOENCODING=utf-8
+
+echo [OK] Virtual environment activated
+echo [OK] Architecture: config/ + core/ + capabilities/ + ui/
+echo [OK] Kernel layers: kernel/ cognition/ memory/ interface/
+echo [OK] Starting NEXA...
 echo.
 
-".venv\Scripts\python.exe" main.py
+REM Use explicit venv python to avoid system Python conflicts
+.venv\Scripts\python.exe main.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [ERROR] Nexa exited with error code: %ERRORLEVEL%
+    echo [ERROR] NEXA exited with error code: %ERRORLEVEL%
     pause
 )

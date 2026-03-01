@@ -16,12 +16,13 @@ from PySide6.QtWidgets import (
     QApplication, QStackedWidget, QScrollArea
 )
 from PySide6.QtCore import (
-    Qt, Signal, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QSize
+    Qt, Signal, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QSize,
+    QMetaObject, Q_ARG, Slot
 )
 from PySide6.QtGui import QFont, QColor, QIcon
 
-from ui.web_neural_graph import WebNeuralBrainWidget
-from ui.memory_detail_card import MemoryDetailCard
+from ui.widgets.web_neural_graph import WebNeuralBrainWidget
+from ui.widgets.memory_detail_card import MemoryDetailCard
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,38 @@ class NeuralMemoryPanel(QWidget):
         self._connect_signals()
         self._load_memories()
         
+        # Debounce timer for auto-refresh (prevents rapid reloads)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(800)  # 800ms debounce
+        self._refresh_timer.timeout.connect(self._refresh_memories)
+        
         logger.info("🧠 NeuralMemoryPanel initialized")
+    
+    def set_event_bus(self, event_bus) -> None:
+        """Subscribe to memory.updated events for live sync."""
+        self._event_bus = event_bus
+        event_bus.subscribe("memory.updated", self._on_memory_updated)
+        logger.info("🔗 NeuralMemoryPanel subscribed to memory.updated events")
+    
+    def _on_memory_updated(self, **kwargs):
+        """
+        Auto-refresh when new memory is stored (debounced).
+        
+        THREAD-SAFETY: This callback is invoked from background threads
+        (context_manager.store_async).  QTimer.start() must only be called
+        from the owning (main) thread, so we marshal via QMetaObject.
+        """
+        if self.isVisible():
+            # Safe cross-thread invocation → runs _schedule_refresh on Qt main thread
+            QMetaObject.invokeMethod(
+                self, "_schedule_refresh", Qt.ConnectionType.QueuedConnection
+            )
+    
+    @Slot()
+    def _schedule_refresh(self):
+        """Start the debounce timer (must run on the Qt main thread)."""
+        self._refresh_timer.start()
     
     def _setup_ui(self):
         """Build the panel UI."""
