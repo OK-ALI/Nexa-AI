@@ -15,10 +15,10 @@ Phase 29: Proactive Engagement ✅
 - proactive_engine.py - Decides what/when to suggest proactively
 - pattern_learner.py - Learns user patterns and routines
 
-Phase 30: Emotional Intelligence (Future)
-- mood_tracker.py
-- emotional_memory.py
-- event_tracker.py
+Phase 30: Emotional Intelligence ✅
+- mood_tracker.py - Text-based mood detection and tracking
+- emotional_memory.py - Emotional context, goals, milestones, journal
+- event_tracker.py - Tracks mentioned events for check-in follow-ups
 
 Phase 31: Personality & Fun (Future)
 - personality_engine.py
@@ -38,6 +38,17 @@ from .proactive_engine import (
     init_proactive_engine, get_proactive_engine
 )
 from .pattern_learner import PatternLearner, ActivityPattern, init_pattern_learner, get_pattern_learner
+
+# Phase 30: Emotional Intelligence
+from .mood_tracker import MoodTracker, Mood, MoodReading, MoodState, init_mood_tracker, get_mood_tracker
+from .emotional_memory import (
+    EmotionalMemory, EmotionalCategory, GoalStatus, EmotionalEntry, GoalEntry,
+    init_emotional_memory, get_emotional_memory
+)
+from .event_tracker import (
+    EventTracker, EventType, EventStatus, TrackedEvent,
+    init_event_tracker, get_event_tracker
+)
 
 __all__ = [
     # Phase 28
@@ -63,7 +74,28 @@ __all__ = [
     'ActivityPattern',
     'init_pattern_learner',
     'get_pattern_learner',
+    
+    # Phase 30
+    'MoodTracker',
+    'Mood',
+    'MoodReading',
+    'MoodState',
+    'init_mood_tracker',
+    'get_mood_tracker',
+    'EmotionalMemory',
+    'EmotionalCategory',
+    'GoalStatus',
+    'EmotionalEntry',
+    'GoalEntry',
+    'init_emotional_memory',
+    'get_emotional_memory',
+    'EventTracker',
+    'EventType',
+    'EventStatus',
+    'TrackedEvent',
+    'init_event_tracker',
+    'get_event_tracker',
 ]
 
-__version__ = "2.0.0"
-__phase__ = 29
+__version__ = "3.0.0"
+__phase__ = 30

@@ -100,6 +100,26 @@ except ImportError:
     init_pattern_learner = None
     get_pattern_learner = None
 
+# Import Companion Mode - Phase 30: Emotional Intelligence (optional)
+try:
+    from .companion import (
+        MoodTracker, init_mood_tracker, get_mood_tracker,
+        EmotionalMemory, init_emotional_memory, get_emotional_memory,
+        EventTracker, init_event_tracker, get_event_tracker
+    )
+    EMOTIONAL_INTELLIGENCE_AVAILABLE = True
+except ImportError:
+    EMOTIONAL_INTELLIGENCE_AVAILABLE = False
+    MoodTracker = None
+    init_mood_tracker = None
+    get_mood_tracker = None
+    EmotionalMemory = None
+    init_emotional_memory = None
+    get_emotional_memory = None
+    EventTracker = None
+    init_event_tracker = None
+    get_event_tracker = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -269,6 +289,33 @@ class NexaBrain:
                 logger.warning(f"⚠️ Proactive initialization failed: {e}")
         else:
             logger.info("⚠️ Proactive engagement disabled")
+        
+        # Initialize Companion Mode - Phase 30: Emotional Intelligence
+        # Enables mood tracking, emotional memory, event tracking, goal tracking
+        # Feature flag: Set to False to disable emotional intelligence
+        self.enable_emotional_intelligence = True
+        self.mood_tracker = None
+        self.emotional_memory = None
+        self.event_tracker = None
+        
+        if EMOTIONAL_INTELLIGENCE_AVAILABLE and self.enable_emotional_intelligence:
+            try:
+                self.mood_tracker = init_mood_tracker()
+                self.emotional_memory = init_emotional_memory()
+                self.event_tracker = init_event_tracker()
+                
+                # Set mood shift callback for logging
+                if self.mood_tracker:
+                    def on_mood_shift(old_mood: str, new_mood: str, valence_delta: float):
+                        direction = "improved" if valence_delta > 0 else "declined"
+                        logger.info(f"💜 Mood shift: {old_mood} → {new_mood} ({direction})")
+                    self.mood_tracker.set_mood_shift_callback(on_mood_shift)
+                
+                logger.info("✅ Emotional intelligence enabled (Phase 30 - Companion Mode)")
+            except Exception as e:
+                logger.warning(f"⚠️ Emotional intelligence initialization failed: {e}")
+        else:
+            logger.info("⚠️ Emotional intelligence disabled")
         
         # Listening timeout timer - checks every 5 seconds if we should go IDLE
         self._listening_timeout_timer = None  # QTimer, set in start()
@@ -1245,6 +1292,19 @@ User: {user_text}"""
                                 result=result
                             )
                             
+                            # PHASE 29 EXT: Set pending intent for YouTube list follow-ups
+                            _YOUTUBE_LIST_FUNCTIONS_SEQ = {'search_youtube', 'get_trending_videos', 'get_channel_videos'}
+                            if func_name in _YOUTUBE_LIST_FUNCTIONS_SEQ and isinstance(result, str) and not result.startswith(('Sorry', 'No ', 'Could not', 'Error')):
+                                try:
+                                    self.context_manager.set_pending_intent(
+                                        intent='play_youtube_result',
+                                        data_needed='number',
+                                        collected_data={}
+                                    )
+                                    logger.info(f"📺 [SEQUENTIAL] YouTube list follow-up intent set after {func_name}")
+                                except Exception as e:
+                                    logger.warning(f"Could not set YouTube follow-up intent: {e}")
+                            
                             logger.info(f"✅ [SEQUENTIAL] Function result: {result}")
                             
                             # Return the result from the executor, not just the user message
@@ -1350,6 +1410,21 @@ User: {user_text}"""
         # PHASE 29 - Record user interaction for idle tracking
         self._record_user_interaction()
         
+        # PHASE 30 - Emotional Intelligence: Track mood, events, milestones
+        self._update_emotional_context(user_text)
+        
+        # === LOCK GUARD: Block all commands while locked ===
+        # Voice input is accepted by kernel (so voice-unlock could work in future),
+        # but we must NOT execute any commands while the lock screen is active.
+        if self._kernel and self._kernel.is_locked:
+            logger.warning(f"🔒 Command blocked (system locked): '{user_text[:50]}'")
+            # Complete the kernel task so it doesn't hang
+            if _kernel_task_id:
+                self._kernel.complete_task(_kernel_task_id)
+            # Resume listener silently — don't speak, don't change state
+            self.listener.resume_listening()
+            return
+        
         # CRITICAL FIX: Pause listener during processing to prevent double commands
         # Without this, listener continues recording during LLM processing and captures
         # TTS audio/noise as "new commands" (causing 0.0% false detections)
@@ -1388,21 +1463,29 @@ User: {user_text}"""
                     self._kernel.complete_task(_kernel_task_id)
                 return  # Don't continue processing, app is shutting down
             
-            # YouTube play commands — bypass LLM for reliable routing
+            # YouTube PLAY commands — bypass LLM for reliable routing
             # Whisper often mishears "play" as "layer/player/lay" so we match on "youtube" keyword
-            if 'youtube' in user_lower:
+            # IMPORTANT: Only bypass for clear PLAY intent. Search/trending/channel/list
+            # commands must go through the LLM so they return lists, not autoplay.
+            _yt_list_keywords = ['search', 'trending', 'trend', 'list', 'show', 'channel',
+                                 'find videos', 'what\'s trending', 'whats trending',
+                                 'latest from', 'uploads from', 'videos from',
+                                 'transcript', 'playlist']
+            _is_yt_list_command = any(kw in user_lower for kw in _yt_list_keywords)
+            
+            if 'youtube' in user_lower and not _is_yt_list_command:
                 # Strip YouTube-related filler words to extract the actual query
                 yt_query = user_lower
                 for word in ['on youtube', 'youtube', 'play', 'play a', 'play some', 
-                             'layer', 'player', 'put', 'put on', 'open', 'search',
-                             'find', 'song', 'video', 'music', 'for me', 'please']:
+                             'layer', 'player', 'put', 'put on', 'open',
+                             'song', 'video', 'music', 'for me', 'please']:
                     yt_query = yt_query.replace(word, '')
                 yt_query = ' '.join(yt_query.split()).strip()  # collapse whitespace
                 
                 if not yt_query:
                     yt_query = 'popular music'  # fallback for bare "play youtube"
                 
-                logger.info(f"🎬 Direct YouTube command detected: '{user_text}' → query='{yt_query}'")
+                logger.info(f"🎬 Direct YouTube PLAY detected: '{user_text}' → query='{yt_query}'")
                 response = self.executor.play_youtube(query=yt_query)
                 self.context_manager.add_interaction(user_text, response, success=True)
                 
@@ -1700,6 +1783,9 @@ User: {user_text}"""
             # This ensures the LLM has the info BEFORE it needs to decide to call a function
             memory_context_text = self._prefetch_memory_context(user_text)
             
+            # PHASE 30: Build emotional context for empathetic responses
+            emotional_context_text = self._build_emotional_context()
+            
             # Build system prompt for intent recognition
             # Check current mode to optimize prompt length
             current_mode = self.llm_manager.current_mode
@@ -1710,7 +1796,7 @@ User: {user_text}"""
                 # Get function catalog
                 function_catalog = self.executor.function_registry.get_catalog(format_type="detailed")
                 
-                system_prompt = f"""You are Nexa, Windows AI assistant. User: {self.config.user_name}{history_text}{pending_action_text}{screen_context_text}{memory_context_text}
+                system_prompt = f"""You are Nexa, Windows AI assistant. User: {self.config.user_name}{history_text}{pending_action_text}{screen_context_text}{memory_context_text}{emotional_context_text}
 Address the user respectfully as "Sir" or "Boss" occasionally in your responses. Never use their personal name.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2809,6 +2895,20 @@ User request: {user_text}"""
                                 data=func_params,
                                 result=result
                             )
+                            
+                            # PHASE 29 EXT: Set pending intent for YouTube list follow-ups
+                            # After listing videos, user can say "play result 2" etc.
+                            _YOUTUBE_LIST_FUNCTIONS = {'search_youtube', 'get_trending_videos', 'get_channel_videos'}
+                            if func_name in _YOUTUBE_LIST_FUNCTIONS and isinstance(result, str) and not result.startswith(('Sorry', 'No ', 'Could not', 'Error')):
+                                try:
+                                    self.context_manager.set_pending_intent(
+                                        intent='play_youtube_result',
+                                        data_needed='number',
+                                        collected_data={}
+                                    )
+                                    logger.info(f"📺 YouTube list follow-up intent set after {func_name}")
+                                except Exception as e:
+                                    logger.warning(f"Could not set YouTube follow-up intent: {e}")
                             
                             # NEW: Learn user preferences from actions
                             self._learn_from_action(func_name, func_params)
@@ -4610,6 +4710,55 @@ User request: {user_text}"""
                 logger.info(f"⚠️ {feature_name} not implemented yet")
                 return f"Sorry, {feature_name} isn't available yet. It's coming in a future update!"
             
+            # Handle play_youtube_result pending intent
+            # User said "play result 2", "the first one", "3", etc. after a YouTube list
+            if intent_type == 'play_youtube_result':
+                # Ordinal-to-number mapping
+                _ordinal_map = {
+                    'first': 1, '1st': 1,
+                    'second': 2, '2nd': 2,
+                    'third': 3, '3rd': 3,
+                    'fourth': 4, '4th': 4,
+                    'fifth': 5, '5th': 5,
+                    'sixth': 6, '6th': 6,
+                    'seventh': 7, '7th': 7,
+                    'eighth': 8, '8th': 8,
+                    'ninth': 9, '9th': 9,
+                    'tenth': 10, '10th': 10,
+                    'last': -1,
+                }
+                
+                number = None
+                
+                # Try to extract a digit from the text
+                digits = re.findall(r'\d+', user_text)
+                if digits:
+                    number = int(digits[0])
+                else:
+                    # Try ordinal words
+                    for word, num in _ordinal_map.items():
+                        if word in user_lower:
+                            number = num
+                            break
+                
+                if number is not None:
+                    clear_pending()
+                    # Handle 'last' ordinal (-1)
+                    if number == -1:
+                        yt_svc = getattr(self.executor, 'youtube_service', None)
+                        if yt_svc and hasattr(yt_svc, '_last_search_results') and yt_svc._last_search_results:
+                            number = len(yt_svc._last_search_results)
+                        else:
+                            number = 1
+                    result = self.executor.play_youtube_result(number=number)
+                    logger.info(f"📺 Playing YouTube result #{number}: {result}")
+                    return result
+                else:
+                    # No number found — not a follow-up, let LLM handle it
+                    clear_pending()
+                    logger.info(f"📺 No number in '{user_text}', clearing YouTube follow-up")
+                    return None
+            
             # Fallback: unknown intent type — clear and let normal processing handle it
             logger.warning(f"⚠️ Unknown pending intent type: {intent_type}")
             clear_pending()
@@ -4909,4 +5058,105 @@ User request: {user_text}"""
             self.idle_monitor.trigger_proactive_opportunity()
         else:
             logger.debug("⏸️ Proactive not triggered (conditions not met)")
+    
+    # ============================================================================
+    # PHASE 30: EMOTIONAL INTELLIGENCE METHODS
+    # ============================================================================
+    
+    def _update_emotional_context(self, user_text: str) -> None:
+        """
+        Analyze user text for mood and events (Phase 30).
+        Called at the start of every input processing cycle.
+        
+        Args:
+            user_text: User's input text
+        """
+        if not self.enable_emotional_intelligence:
+            return
+        
+        try:
+            # 1) Update mood tracker
+            if self.mood_tracker:
+                reading = self.mood_tracker.update(user_text)
+                if reading.confidence >= 0.4:
+                    logger.debug(f"💜 Mood: {reading.mood} (conf={reading.confidence:.2f})")
+                    
+                    # Store significant mood readings in emotional memory
+                    if self.emotional_memory and reading.confidence >= 0.6:
+                        self.emotional_memory.store_mood_snapshot(
+                            mood=reading.mood,
+                            context=user_text[:100],
+                            valence=reading.valence
+                        )
+            
+            # 2) Detect and track events
+            if self.event_tracker:
+                new_events = self.event_tracker.process_text(user_text)
+                if new_events:
+                    for ev in new_events:
+                        logger.info(f"💜 Event tracked: [{ev.event_type}] {ev.description[:60]}")
+                        # Also store in emotional memory for richer context
+                        if self.emotional_memory:
+                            current_mood = "neutral"
+                            if self.mood_tracker:
+                                current_mood = self.mood_tracker.get_current_mood().current_mood
+                            self.emotional_memory.store_emotional_context(
+                                content=ev.description,
+                                category="event",
+                                emotion=current_mood,
+                                importance=ev.importance,
+                                tags=[ev.event_type]
+                            )
+            
+            # 3) Record interaction for milestone tracking
+            if self.emotional_memory:
+                milestone = self.emotional_memory.record_interaction()
+                if milestone:
+                    msg = self.emotional_memory.celebrate_milestone(milestone)
+                    if msg:
+                        logger.info(f"💜 Milestone reached: {milestone}")
+                        # Milestone celebration will be picked up via context prompt
+        
+        except Exception as e:
+            logger.debug(f"Emotional context update failed (non-critical): {e}")
+    
+    def _build_emotional_context(self) -> str:
+        """
+        Build emotional context string for LLM prompt injection.
+        
+        Returns:
+            Formatted context string (empty if no emotional data)
+        """
+        if not self.enable_emotional_intelligence:
+            return ""
+        
+        parts = []
+        
+        try:
+            # Mood context
+            if self.mood_tracker:
+                mood_text = self.mood_tracker.get_mood_for_prompt()
+                if mood_text:
+                    parts.append(mood_text)
+            
+            # Event context
+            if self.event_tracker:
+                event_text = self.event_tracker.get_context_for_prompt()
+                if event_text:
+                    parts.append(event_text)
+            
+            # Emotional memory context (goals, recent events)
+            if self.emotional_memory:
+                emo_text = self.emotional_memory.get_context_for_prompt()
+                if emo_text:
+                    parts.append(emo_text)
+        
+        except Exception as e:
+            logger.debug(f"Emotional context build failed (non-critical): {e}")
+        
+        if not parts:
+            return ""
+        
+        context = " | ".join(parts)
+        return f"\n\n💜 EMOTIONAL CONTEXT (adapt your tone accordingly):\n{context}\n"
 

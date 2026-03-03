@@ -4,6 +4,7 @@ Maps function names to executor methods for AI-driven command execution.
 """
 
 import logging
+import time
 from typing import Dict, Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -223,7 +224,7 @@ class FunctionRegistry:
         self.register(
             "get_trending_videos",
             self.executor.get_trending_videos,
-            "Show currently trending videos on YouTube for a region. Use for: 'what's trending on youtube', 'show popular videos', 'trending videos in uk'",
+            "Show currently trending videos on YouTube for a region. Returns a numbered list. Use for: 'what's trending on youtube', 'show popular videos', 'trending videos in uk'. After this, user can say 'play result N' to watch one.",
             {
                 "region": "Two-letter country code, e.g. US, GB, IN (default: US)",
                 "count": "Number of results to return 1-10 (default: 5)"
@@ -233,7 +234,7 @@ class FunctionRegistry:
         self.register(
             "get_channel_videos",
             self.executor.get_channel_videos,
-            "List recent uploads from a YouTube channel. Use for: 'show videos from mkbhd', 'what has [channel] uploaded', 'latest from [channel]'",
+            "List recent uploads from a YouTube channel. Returns a numbered list. Use for: 'show videos from mkbhd', 'what has [channel] uploaded', 'latest from [channel]'. After this, user can say 'play result N' to watch one.",
             {
                 "channel_name": "Channel handle or name (e.g. mkbhd, veritasium) — no @ sign needed",
                 "count": "Number of videos to list 1-10 (default: 5)"
@@ -1369,6 +1370,45 @@ class FunctionRegistry:
             "User declines a proactive suggestion. Voice: 'no thanks', 'not now', 'I'm fine', 'maybe later' (when responding to a proactive suggestion)",
             {}
         )
+        
+        # ===== EMOTIONAL INTELLIGENCE (Phase 30) =====
+        self.register(
+            "journal_thought",
+            self._journal_thought,
+            "Store a user's thought, reflection, or something they want to remember emotionally. Voice: 'remember that I felt...', 'journal this thought...', 'I want to write down...', 'note my feeling...'",
+            {"thought": "The user's thought or reflection to journal"}
+        )
+        
+        self.register(
+            "track_goal",
+            self._track_goal,
+            "Start tracking a personal goal or aspiration. Voice: 'I want to learn guitar', 'my goal is to...', 'track my goal...', 'I'm working on...'",
+            {"goal_name": "Name of the goal (e.g., 'learn guitar', 'get fit', 'read more')",
+             "description": "(Optional) Detailed description of the goal"}
+        )
+        
+        self.register(
+            "update_goal",
+            self._update_goal,
+            "Update progress on a tracked goal. Voice: 'I made progress on...', 'update my goal...', 'I completed my goal...'",
+            {"goal_name": "Name of the goal to update",
+             "status": "(Optional) New status: 'active', 'paused', 'completed', 'abandoned'",
+             "progress_note": "(Optional) Progress note to add"}
+        )
+        
+        self.register(
+            "get_my_goals",
+            self._get_my_goals,
+            "List user's active goals and their status. Voice: 'what are my goals', 'show my goals', 'goal progress'",
+            {}
+        )
+        
+        self.register(
+            "get_my_mood",
+            self._get_my_mood,
+            "Get summary of user's recent mood/emotional state. Voice: 'how have I been feeling', 'my mood today', 'mood summary'",
+            {}
+        )
     
     # Functions that require internet connection (blocked in offline mode)
     # Messages are user-friendly with clear instructions on how to enable
@@ -1968,3 +2008,153 @@ class FunctionRegistry:
     def _decline_proactive_suggestion(self) -> str:
         """Handle user declining a proactive suggestion."""
         return self.executor.decline_proactive_suggestion()
+    
+    # =========================================================================
+    # Phase 30: Emotional Intelligence Functions
+    # =========================================================================
+    
+    def _journal_thought(self, thought: str = "") -> str:
+        """Store a user's thought/reflection in emotional memory."""
+        if not thought:
+            return "What thought would you like me to journal?"
+        try:
+            from core.companion import get_emotional_memory, get_mood_tracker
+            emotional_memory = get_emotional_memory()
+            if not emotional_memory:
+                return "Emotional memory is not available right now."
+            
+            # Get current mood for context
+            current_mood = "neutral"
+            mood_tracker = get_mood_tracker()
+            if mood_tracker:
+                current_mood = mood_tracker.get_current_mood().current_mood
+            
+            entry_id = emotional_memory.journal_thought(thought, emotion=current_mood)
+            return f"I've journaled that thought for you. I'll remember this."
+        except Exception as e:
+            logger.error(f"Journal thought failed: {e}")
+            return "I couldn't save that thought right now. Please try again."
+    
+    def _track_goal(self, goal_name: str = "", description: str = "") -> str:
+        """Start tracking a new goal."""
+        if not goal_name:
+            return "What goal would you like me to track?"
+        try:
+            from core.companion import get_emotional_memory
+            emotional_memory = get_emotional_memory()
+            if not emotional_memory:
+                return "Emotional memory is not available right now."
+            
+            goal_id = emotional_memory.track_goal(
+                name=goal_name,
+                description=description or goal_name
+            )
+            return f"I'm now tracking your goal: '{goal_name}'. I'll check in with you periodically to see how it's going!"
+        except Exception as e:
+            logger.error(f"Track goal failed: {e}")
+            return "I couldn't set up that goal right now. Please try again."
+    
+    def _update_goal(self, goal_name: str = "", status: str = "", progress_note: str = "") -> str:
+        """Update a tracked goal."""
+        if not goal_name:
+            return "Which goal would you like to update?"
+        try:
+            from core.companion import get_emotional_memory
+            emotional_memory = get_emotional_memory()
+            if not emotional_memory:
+                return "Emotional memory is not available right now."
+            
+            # Try to find the goal by name
+            active_goals = emotional_memory.get_active_goals()
+            found_goal = None
+            goal_name_lower = goal_name.lower()
+            for g in active_goals:
+                if goal_name_lower in g.name.lower() or g.name.lower() in goal_name_lower:
+                    found_goal = g
+                    break
+            
+            # Also check all goals (not just active)
+            if not found_goal:
+                for g in emotional_memory._goals.values():
+                    if goal_name_lower in g.name.lower() or g.name.lower() in goal_name_lower:
+                        found_goal = g
+                        break
+            
+            if not found_goal:
+                return f"I don't have a goal called '{goal_name}'. Would you like me to start tracking it?"
+            
+            success = emotional_memory.update_goal(
+                goal_id=found_goal.id,
+                status=status or None,
+                progress_note=progress_note or None
+            )
+            
+            if success:
+                if status == "completed":
+                    emotional_memory.celebrate_milestone('first_goal_completed')
+                    return f"Congratulations! You've completed your goal: '{found_goal.name}'! That's amazing!"
+                elif status:
+                    return f"Updated goal '{found_goal.name}' to status: {status}."
+                elif progress_note:
+                    return f"Added progress note to '{found_goal.name}'. Keep it up!"
+                else:
+                    return f"Goal '{found_goal.name}' has been updated."
+            return f"Could not update goal '{goal_name}'."
+        except Exception as e:
+            logger.error(f"Update goal failed: {e}")
+            return "I couldn't update that goal right now. Please try again."
+    
+    def _get_my_goals(self) -> str:
+        """List user's active goals."""
+        try:
+            from core.companion import get_emotional_memory
+            emotional_memory = get_emotional_memory()
+            if not emotional_memory:
+                return "Emotional memory is not available right now."
+            
+            active_goals = emotional_memory.get_active_goals()
+            if not active_goals:
+                return "You don't have any active goals right now. Would you like to set one?"
+            
+            lines = [f"You have {len(active_goals)} active goal(s):"]
+            for i, g in enumerate(active_goals, 1):
+                days_active = int((time.time() - g.created_at) / 86400)
+                notes_count = len(g.progress_notes)
+                lines.append(f"  {i}. {g.name} (tracking for {days_active} days, {notes_count} progress notes)")
+            
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"Get goals failed: {e}")
+            return "I couldn't retrieve your goals right now."
+    
+    def _get_my_mood(self) -> str:
+        """Get user's mood summary."""
+        try:
+            from core.companion import get_mood_tracker
+            mood_tracker = get_mood_tracker()
+            if not mood_tracker:
+                return "Mood tracking is not available right now."
+            
+            summary = mood_tracker.get_mood_summary(hours=24)
+            
+            if summary['readings_count'] == 0:
+                return "I haven't detected enough emotional cues yet to give you a mood summary. Keep talking to me and I'll learn your patterns!"
+            
+            mood = summary['dominant_mood']
+            count = summary['readings_count']
+            valence = summary['average_valence']
+            trend = summary['trend']
+            
+            # Build natural response
+            valence_desc = "positive" if valence > 0.2 else "negative" if valence < -0.2 else "neutral"
+            trend_desc = ""
+            if trend == "improving":
+                trend_desc = " Your mood seems to be improving, which is great!"
+            elif trend == "declining":
+                trend_desc = " I've noticed your mood has been dipping. I'm here for you if you need anything."
+            
+            return (f"Based on our {count} recent interactions, your dominant mood has been "
+                    f"'{mood}' with an overall {valence_desc} tone.{trend_desc}")
+        except Exception as e:
+            logger.error(f"Get mood failed: {e}")
+            return "I couldn't analyze your mood right now."

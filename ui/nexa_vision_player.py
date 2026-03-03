@@ -721,6 +721,12 @@ class NexaVisionPlayer(QMainWindow):
             logger.error("❌ NVP page failed to load")
             return
         
+        # Ignore about:blank loads (fired after closeEvent navigates away)
+        current_url = self._web_view.url().toString()
+        if 'about:blank' in current_url:
+            logger.debug("NVP: Ignoring about:blank load — not marking page ready")
+            return
+        
         self._page_ready = True
         
         # Inject QWebChannel bridge

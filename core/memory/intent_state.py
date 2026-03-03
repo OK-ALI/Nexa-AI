@@ -132,6 +132,7 @@ class IntentState:
             'send_email': ['recipient', 'subject'],
             'set_reminder': ['text', 'time'],
             'share_file': ['file_path', 'platform'],
+            'play_youtube_result': ['number'],
         }
         
         # =====================================================================

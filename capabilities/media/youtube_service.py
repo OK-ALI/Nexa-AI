@@ -989,6 +989,9 @@ class YouTubeService:
             if not entries:
                 return f"No trending videos found for region '{region}'."
 
+            # Store results so play_youtube_result can use them
+            self._last_search_results = entries
+
             lines = [f"🔥 Trending on YouTube ({region}):"]
             for i, entry in enumerate(entries, 1):
                 title = entry.get("title", "Unknown")
@@ -998,6 +1001,7 @@ class YouTubeService:
                 ch_str = f" — {channel}" if channel else ""
                 lines.append(f"{i}. {title}{ch_str}{dur_str}")
 
+            lines.append(f"\nSay 'play result 1' (or any number) to watch one of these.")
             return "\n".join(lines)
 
         except Exception as e:
