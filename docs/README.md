@@ -25,14 +25,14 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 🌐 **Single Model Architecture** - Llama 3.1 8B (Online & Offline)
 - 🔒 **Privacy-First** - Fully functional offline mode
 - ⚡ **Fast & Responsive** - 2-5 second responses
-- 🎯 **143+ Commands** - Full system control
+- 🎯 **180+ Commands** - Full system control
 - 🎤 **Speaker Verification** - Voice recognition (SpeechBrain)
 - 🎨 **Beautiful UI** - Modern particle orb with HTML5 Canvas
 - 🐾 **Desktop Companion** - Cute animated AI character
 - 🧠 **Smart Memory** - Remembers facts, preferences, conversations (LanceDB)
 - 🔐 **Login & Lock Screen** - Secure PBKDF2 authentication
 - 💫 **Breathing Glow Title** - Dynamic title glow following orb state
-- 💜 **Companion Mode** - Thinking feedback, proactive engagement
+- 💜 **Companion Mode** - Thinking feedback, proactive engagement, emotional intelligence
 
 ---
 
@@ -79,12 +79,12 @@ Nexa is an advanced **AI desktop assistant** that uses **Llama 3.1 8B** to give 
 - 📈 Memory panel GUI for browsing memories
 - 🗑️ Forget command ("Forget about my password")
 
-### 💜 Companion Mode (Coming Soon)
+### 💜 Companion Mode
 
-- 💭 **Thinking Feedback** - "Working on it...", "Let me check..." 
-- 👋 **Proactive Engagement** - Idle suggestions, break reminders
-- 🤗 **Emotional Intelligence** - Mood detection, check-ins
-- 🎮 **Personality & Fun** - Jokes, opinions, mini-games
+- 💭 **Thinking Feedback** ✅ - "Working on it...", "Let me check..." 
+- 👋 **Proactive Engagement** ✅ - Idle suggestions, break reminders
+- 🤗 **Emotional Intelligence** ✅ - Mood detection, goal tracking, journal, event check-ins
+- 🎮 **Personality & Fun** 📋 - Jokes, opinions, mini-games (Phase 31 - Planned)
 
 ---
 
@@ -106,8 +106,8 @@ ollama pull llama3.1:8b-instruct-q4_K_M
 ### 2. Clone & Setup
 
 ```powershell
-git clone https://github.com/yourusername/Nexa-MyAI.git
-cd Nexa-MyAI
+git clone https://github.com/OK-ALI/Nexa-AI.git
+cd Nexa-AI
 
 # Create virtual environment
 python -m venv .venv
@@ -154,11 +154,12 @@ This single comprehensive document contains **EVERYTHING:**
 
 **👉 START HERE:** [NEXA_COMPLETE_DOCUMENTATION.md](NEXA_COMPLETE_DOCUMENTATION.md)
 
-### **🐾 Companion UI Documentation**
+### **🐾 Companion Documentation**
 
-- **[NEXA_PET_PROGRESS.md](NEXA_PET_PROGRESS.md)** - Companion implementation progress (P1-P3 complete)
+- **[NEXA_PET_PROGRESS.md](NEXA_PET_PROGRESS.md)** - Companion UI progress (P1-P7 complete)
 - **[LIVE2D_PET_GUIDE.md](LIVE2D_PET_GUIDE.md)** - Technical companion guide (Sprite + Live2D)
 - **[NEXA_PHASES_ROADMAP.md](NEXA_PHASES_ROADMAP.md)** - Full project roadmap with companion phases
+- **[NEXA_CAPABILITIES.md](NEXA_CAPABILITIES.md)** - Complete voice commands reference (180+ functions)
 
 ---
 
@@ -237,24 +238,26 @@ This single comprehensive document contains **EVERYTHING:**
 
 ## 🗺️ Roadmap
 
-### Completed (64%)
+### Completed (~71%)
 
 - ✅ Core AI System (Hybrid online/offline)
 - ✅ Voice Interface (Speech + Kokoro TTS)
-- ✅ 143+ System Functions
+- ✅ 180+ System Functions
 - ✅ Modern Particle Orb UI (HTML5 Canvas + QWebEngineView)
 - ✅ Desktop Companion UI (P1-P7: Foundation through Personality)
 - ✅ Speaker Verification
 - ✅ Smart Memory & Learning (LanceDB + embeddings)
 - ✅ Login System & Lock Screen (PBKDF2 auth)
 - ✅ Breathing Glow Title + Sir/Boss Addressing
-- ✅ Companion Mode: Thinking Feedback + Proactive Engagement
+- ✅ Companion Mode: Thinking Feedback + Proactive Engagement + Emotional Intelligence
 - ✅ System Control Expansion (Phase 16: 26 functions)
-- ✅ Performance Optimizations
+- ✅ YouTube + Web Intelligence (Phase 18: play, search, download, smart web search)
+- ✅ File Management (Phase 21: create, move, copy, delete, organize, compress)
+- ✅ Performance Optimizations (TTS LRU Cache, Priority Manager)
 
 ### In Progress
 
-- ⏳ **Companion Mode Phase 30** - Emotional Intelligence (mood detection, check-ins)
+- 📋 **Phase 31** - Personality & Fun (LLM greetings, mini-games, opinions)
 
 ### Paused
 
@@ -263,9 +266,8 @@ This single comprehensive document contains **EVERYTHING:**
 
 ### Planned
 
-- 📋 Phase 18: YouTube Integration
 - 📋 Phase 19: Email Integration
-- 📋 Phase 21-26: File Management, Vision, Productivity
+- 📋 Phase 22-26: Screen Reading, Notifications, Productivity, Advanced AI
 - 📋 Phase 31: Companion Personality & Fun
 
 ---
@@ -297,7 +299,7 @@ This single comprehensive document contains **EVERYTHING:**
 ## 📞 Support
 
 - **Documentation:** [NEXA_COMPLETE_DOCUMENTATION.md](NEXA_COMPLETE_DOCUMENTATION.md)
-- **GitHub Issues:** [Report a bug](https://github.com/yourusername/Nexa-MyAI/issues)
+- **GitHub Issues:** [Report a bug](https://github.com/OK-ALI/Nexa-AI/issues)
 - **Email:** [Your email]
 
 ---

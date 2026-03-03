@@ -1,9 +1,9 @@
 # 🤖 Nexa AI - Complete Capabilities Reference
 
-**Total Voice Commands:** 100+  
-**Last Updated:** January 1, 2026  
-**Status:** Phase 16 Complete (16/30 Phases + Companion Track)  
-**Next Priority:** 💜 Companion Mode (Phases 27-30)
+**Total Voice Commands:** 180+  
+**Last Updated:** March 3, 2026  
+**Status:** Phase 30 Complete (22/31 Phases)  
+**Next Priority:** 💜 Phase 31 - Personality & Fun
 
 ---
 
@@ -30,9 +30,14 @@
 | Content Mode & PDF | 17 | ✅ Phase 14 |
 | File Sharing | 6 | ⏸️ Phase 15 (Paused) |
 | System Control | 26 | ✅ Phase 16 |
-| Desktop Companion | N/A (Sprite/Live2D) | ✅ Companion P1-P3 |
-| Smart Memory | 5 | 🔧 Testing |
-| **Companion Mode** | **Phases 27-30** | 📋 **HIGH PRIORITY** |
+| Smart Memory | 20 | ✅ Phase 20 |
+| File Management | 15 | ✅ Phase 21 |
+| YouTube + Web | 12 | ✅ Phase 18 |
+| Companion: Thinking | 3 | ✅ Phase 28 |
+| Companion: Proactive | 6 | ✅ Phase 29 |
+| Companion: Emotional Intelligence | 5 | ✅ Phase 30 |
+| Login & Security | 1 | ✅ Bonus |
+| Phase 29 Extended | 4 | ✅ Mar 2026 |
 
 ---
 
@@ -303,13 +308,74 @@
 
 ---
 
-### 🐾 Desktop Companion (P1-P3 Complete)
+### 🐾 Desktop Companion (P1-P7 Complete)
 | Feature | Description |
 |---------|-------------|
 | **Sprite Mode** | Custom Nexa character with 8 states, floating/breathing animations |
 | **Live2D Mode** | Professional 2D animation with physics, expressions, motions |
 | **States** | Idle, Listening, Thinking, Speaking, Sleeping, Happy, Error, Content Mode |
 | **Integration** | Syncs with NexaBrain state, draggable, transparent window |
+
+---
+
+### 🎬 YouTube & Web (Phase 18)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `play_youtube` | "Play Bohemian Rhapsody on YouTube" | `query` |
+| `search_youtube` | "Search YouTube for tutorials" | `query`, `max_results` |
+| `download_youtube` | "Download this video" | `url`, `quality` |
+| `get_youtube_trending` | "What's trending on YouTube?" | None |
+| `search_web` | "Search for...", "Google..." | `query` |
+
+---
+
+### 🧠 Smart Memory (Phase 20)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `learn_fact` | "Remember that I like dark theme" | `fact` |
+| `recall_memories` | "What do you know about me?" | `query` |
+| `forget_memory` | "Forget about my password" | `query` |
+| `show_memory_panel` | "Show my memories" | None |
+
+---
+
+### 📂 File Management (Phase 21)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `create_file` | "Create a file called notes.txt" | `file_name`, `content` |
+| `move_file` | "Move report.pdf to Documents" | `source`, `destination` |
+| `copy_file` | "Copy photo.jpg to backup" | `source`, `destination` |
+| `delete_file` | "Delete old_file.txt" | `file_path` |
+| `rename_file` | "Rename doc.txt to notes.txt" | `file_path`, `new_name` |
+| `find_files` | "Find all PDF files" | `pattern`, `location` |
+| `organize_downloads` | "Organize my downloads" | None |
+| `compress_folder` | "Zip the project folder" | `folder_path` |
+
+---
+
+### 🔐 Login & Security (Bonus)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `lock_nexa` | "Lock Nexa", "Lock yourself" | None |
+
+---
+
+### 💜 Emotional Intelligence (Phase 30)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `journal_thought` | "Journal a thought", "Remember this feeling" | `thought` |
+| `track_goal` | "Track a goal", "I want to learn guitar" | `goal_name`, `description` |
+| `update_goal` | "Update my goal", "I made progress on..." | `goal_name`, `status`, `progress_note` |
+| `get_my_goals` | "Show my goals", "What are my goals?" | None |
+| `get_my_mood` | "What's my mood?", "How am I feeling?" | None |
+
+---
+
+### 💭 Companion Mode (Phases 28-29)
+| Function | Voice Commands | Parameters |
+|----------|----------------|------------|
+| `accept_proactive_suggestion` | "Sure", "Yes, do it" | None |
+| `decline_proactive_suggestion` | "No thanks", "Not now" | None |
 
 ---
 
@@ -323,26 +389,26 @@
 
 ## 🔮 Coming Soon (Planned Phases)
 
-### 💜 Companion Mode (HIGH PRIORITY - Phases 27-30)
+### 💜 Companion Mode
 
 | Phase | Feature | Description | Status |
 |-------|---------|-------------|--------|
-| **27** | Thinking State Feedback | "Working on it...", "Let me check..." - Immediate audio feedback | 📋 HIGH |
-| **28** | Proactive Engagement | Idle suggestions, break reminders, time-based greetings | 📋 HIGH |
-| **29** | Emotional Intelligence | Mood detection, emotional memory, check-ins, journaling | 📋 HIGH |
-| **30** | Personality & Fun | Opinions, jokes, mini-games, compliments, nicknames | 📋 MEDIUM |
+| **28** | Thinking State Feedback | "Working on it...", "Let me check..." - Immediate audio feedback | ✅ COMPLETED |
+| **29** | Proactive Engagement | Idle suggestions, break reminders, time-based greetings | ✅ COMPLETED |
+| **30** | Emotional Intelligence | Mood detection, emotional memory, check-ins, journaling, goal tracking | ✅ COMPLETED |
+| **31** | Personality & Fun | Opinions, jokes, mini-games, compliments, nicknames | 📋 PLANNED |
 
-### Standard Phases (17-26)
+### Standard Phases
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 17 | YouTube Integration | 📋 Planned |
-| 18 | Smart Notifications | 📋 Planned |
-| 19 | Smart Memory (LanceDB) | 🔧 Testing |
-| 20 | Email Management | 📋 Planned |
-| 21 | Smart Home | 📋 Planned |
+| 17 | Modern Particle Orb UI | ✅ Completed |
+| 18 | YouTube + Web Intelligence | ✅ Completed |
+| 19 | Email Integration | 📋 Planned |
+| 20 | Smart Memory (LanceDB) | ✅ Completed |
+| 21 | File Management | ✅ Completed |
 | 22 | Screen Reading (PaddleOCR) | 📋 Planned |
-| 23 | Photo Management | 📋 Planned |
+| 23 | Smart Notifications | 📋 Planned |
 | 24 | Productivity Suite | 📋 Planned |
 | 25 | Voice Profile Enhancement | 📋 Planned |
 | 26 | Advanced AI Features | 📋 Planned |
@@ -351,9 +417,11 @@
 
 ## 📌 Notes
 
-1. **Hybrid AI**: Works both online (Gemini) and offline (Llama 3.1 8B)
-2. **Wake Word**: "Nexa" to activate voice commands
+1. **Single Model Architecture**: Llama 3.1 8B for both online and offline via Ollama
+2. **No Wake Word**: Responds to all speech (configurable in `listener.py`)
 3. **Speaker Verification**: Enrolled users only (Phase 6)
 4. **Smart File Detection**: Many commands auto-detect last created file
 5. **Content Mode**: Full document editing with PDF export
 6. **Phase 15 (Sharing)**: Clipboard method works universally, platform automation paused
+7. **Emotional Intelligence**: Mood tracking, goal management, event check-ins (Phase 30)
+8. **180+ Functions**: Registered in `capabilities/function_registry.py`

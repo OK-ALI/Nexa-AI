@@ -484,7 +484,31 @@ All validation tests passed (8/8 unit tests). System now has 7 progressive valid
 - [ ] Enhance web search integration
 - [ ] Vision-based mouse control (requires Online mode)
 
-**Current Status:** 93.70% pass rate, 119/127 tests passing, only 8 failures remaining (6 are mouse controls waiting for Vision mode)
+**Current Status:** 98.7% pass rate, 150/152 tests passing, 2 known failures (test_phase16 OSError in pytest environment)
+
+---
+
+## ✅ Post-Sprint 3 Phases Test Summary (Phase 16-30)
+
+All phases after Sprint 3 were tested via `pytest tests/ -v`:
+
+| Phase | Test File | Tests | Status |
+|-------|-----------|-------|--------|
+| Phase 16 | `test_phase16.py` | 12 pass, 2 fail (OSError) | ⚠️ Known pytest stdin issue |
+| Phase 17 | `test_phase17.py` | Various | ✅ All pass |
+| Phase 18 | `test_youtube.py`, `test_web.py` | Various | ✅ All pass |
+| Phase 20 | `test_smart_memory.py` | 6 | ✅ All pass |
+| Phase 21 | `test_file_management.py` | Various | ✅ All pass |
+| Phase 28 | `test_companion.py` | Various | ✅ All pass |
+| Phase 29 | `test_proactive.py` | Various | ✅ All pass |
+| Phase 30 | (imports verified) | Module imports | ✅ No errors |
+| **TOTAL** | 16 test files | **150/152** | **98.7%** |
+
+### Known Failures (2/152)
+- `test_phase16.py::test_quick_settings` — OSError: pytest reading from stdin (test environment limitation)
+- `test_phase16.py::test_dangerous_functions` — OSError: same stdin issue
+
+These are **not** runtime bugs — the functions work correctly when Nexa runs normally.
 
 ---
 

@@ -1,6 +1,6 @@
 # 📖 Nexa AI - Complete Command Guide
 
-This guide covers **all voice commands** you can use with Nexa. Simply speak naturally — you don't need to use exact phrases!
+This guide covers **all voice commands** you can use with Nexa (180+ functions). Simply speak naturally — you don't need to use exact phrases!
 
 ---
 
@@ -21,6 +21,12 @@ This guide covers **all voice commands** you can use with Nexa. Simply speak nat
 13. [Content Mode](#content-mode)
 14. [Weather](#weather)
 15. [Voice Control Settings](#voice-control-settings)
+16. [System Control (Phase 16)](#system-control-phase-16)
+17. [YouTube & Video (Phase 18)](#youtube--video-phase-18)
+18. [Smart Memory (Phase 20)](#smart-memory-phase-20)
+19. [File Management (Phase 21)](#file-management-phase-21)
+20. [Login & Security](#login--security)
+21. [Emotional Intelligence (Phase 30)](#emotional-intelligence-phase-30)
 
 ---
 
@@ -611,6 +617,113 @@ Commands for fixing mistakes:
 
 ---
 
+## ⚡ System Control (Phase 16)
+
+### Power Management
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Lock the computer" | Locks Windows |
+| "Put computer to sleep" | System sleep |
+| "Hibernate" | System hibernate |
+| "Restart in 5 minutes" | Scheduled restart |
+| "Shutdown in 30 minutes" | Scheduled shutdown |
+| "Cancel shutdown" | Cancels scheduled shutdown/restart |
+
+### Power Plans
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "What power plan am I on?" | Shows current plan |
+| "High performance mode" | Switches to high performance |
+| "Power saver mode" | Switches to power saver |
+| "Balanced mode" | Switches to balanced |
+
+### Bluetooth
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Bluetooth status" | Shows if Bluetooth is on/off |
+| "List Bluetooth devices" | Shows paired devices |
+| "Turn on Bluetooth" | Enables Bluetooth |
+| "Turn off Bluetooth" | Disables Bluetooth |
+
+### Display & Quick Settings
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Enable night light" | Turns on blue light filter |
+| "Disable night light" | Turns off blue light filter |
+| "Airplane mode" | Toggles airplane mode |
+| "Enable battery saver" | Turns on battery saver |
+| "Check for updates" | Opens Windows Update |
+| "Second screen" | Opens display projection settings |
+
+---
+
+## 🎬 YouTube & Video (Phase 18)
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Play Bohemian Rhapsody on YouTube" | Plays video in NVP player |
+| "Search YouTube for cooking tutorials" | Searches and shows results |
+| "Download this video" | Downloads current video |
+| "What's trending on YouTube?" | Shows trending videos |
+
+---
+
+## 🧠 Smart Memory (Phase 20)
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Remember that I like dark theme" | Stores memory |
+| "Remember my birthday is March 15" | Stores personal fact |
+| "What do you know about me?" | Recalls relevant memories |
+| "Forget about my old password" | Deletes matching memory |
+| "Show my memories" | Opens Memory Panel GUI |
+
+---
+
+## 📂 File Management (Phase 21)
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Create a file called notes.txt" | Creates new file |
+| "Move report.pdf to Documents" | Moves file |
+| "Copy photo to backup folder" | Copies file |
+| "Delete old_file.txt" | Deletes file (Recycle Bin) |
+| "Rename doc.txt to notes.txt" | Renames file |
+| "Find all PDF files" | Searches for files |
+| "Organize my downloads" | Auto-sorts by file type |
+| "Zip the project folder" | Creates compressed archive |
+
+---
+
+## 🔐 Login & Security
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Lock Nexa" | Locks Nexa (requires password) |
+| "Lock yourself" | Locks Nexa |
+
+---
+
+## 💜 Emotional Intelligence (Phase 30)
+
+| What to Say | What Happens |
+|-------------|--------------|
+| "Journal a thought" | Saves a thought/reflection |
+| "I want to track a goal" | Starts tracking a new goal |
+| "Track goal: learn guitar" | Creates specific goal |
+| "Update my goal" | Updates progress on a goal |
+| "I completed my goal" | Marks goal as completed |
+| "Show my goals" | Lists all active goals |
+| "What's my mood?" | Shows mood analysis summary |
+
+> Nexa also automatically detects your mood from conversations and adjusts her tone. She'll remember events you mention (exams, interviews, trips) and ask about them later!
+
+---
+
 ## 💡 Pro Tips
 
 ### Multi-Step Commands
@@ -655,4 +768,4 @@ Nexa recognizes many variations:
 
 ---
 
-*Nexa Beta 1.0 - For more help, visit our GitHub or submit feedback!*
+*Nexa v2.1 — 180+ Functions | 22/31 Phases Complete | For more help, visit [GitHub](https://github.com/OK-ALI/Nexa-AI) or submit feedback!*
