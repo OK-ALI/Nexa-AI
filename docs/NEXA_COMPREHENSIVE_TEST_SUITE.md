@@ -1150,19 +1150,21 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Voice Command | Expected Behavior | Result |
 |---|---|---|---|
-| 488 | "Read the screen" | Returns disabled/not available message (Phase 23) | |
-| 489 | "Describe my screen" | Returns disabled/not available message (Phase 23) | |
-| 490 | "Read notifications" | Returns disabled/depends on vision message | |
+| 488 | "Read the screen" | Returns disabled/not available message (Vision removed Phase 24) | |
+| 489 | "Describe my screen" | Returns disabled/not available message (Vision removed Phase 24) | |
+| 490 | "Read notifications" | Returns "Notification reading is currently unavailable" (Vision dependency removed) | |
 
 ---
 
-## R.7 — Mouse Controller
+## R.7 — Keyboard Shortcuts (via Executor)
+
+Note: `MouseController` exists internally but is NOT registered as voice commands. These test the keyboard-shortcut-based clipboard operations.
 
 | # | Voice Command | Expected Behavior | Result |
 |---|---|---|---|
-| 491 | "Click" *(mouse controller)* | Performs mouse click at current position | |
-| 492 | "Select text" | Performs text selection operation | |
-| 493 | "Copy selection" | Copies via mouse controller | |
+| 491 | "Select all" | Sends Ctrl+A via `select_all_text` | |
+| 492 | "Copy that" | Sends Ctrl+C via `copy_selected_text` | |
+| 493 | "Paste" | Sends Ctrl+V via `paste_clipboard` | |
 
 ---
 
@@ -1302,7 +1304,7 @@ Test that NEXA doesn't always give identical responses.
 | UI Responsiveness | 9 | | | |
 | Error Recovery | 5 | | | |
 | Screen Reader (Disabled) | 3 | | | |
-| Mouse Controller | 3 | | | |
+| Keyboard Shortcuts | 3 | | | |
 | Special Characters | 4 | | | |
 | LLM JSON Parsing | 3 | | | |
 | **TOTAL Regression** | **42** | | | |

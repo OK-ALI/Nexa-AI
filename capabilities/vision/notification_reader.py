@@ -110,6 +110,16 @@ class NotificationReader:
         try:
             logger.info("📱 Reading notifications...")
             
+            # Check if vision model is available (removed in Phase 24)
+            if not hasattr(self.screen_reader, 'vision_model') or self.screen_reader.vision_model is None:
+                logger.warning("Vision model not available — notification reading disabled")
+                return {
+                    'success': False,
+                    'notification_text': "Notification reading is currently unavailable (vision model not loaded)",
+                    'notification_count': 0,
+                    'raw_text': ''
+                }
+            
             # Step 1: Open notification center
             if not self.open_notification_center():
                 return {
