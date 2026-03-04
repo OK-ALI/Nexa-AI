@@ -46,6 +46,18 @@ config/setup_complete.marker
 music_player_required_icons/
 other_icons/
 
+# Removed directories (preserved in git history)
+backups/
+Animations/
+scripts/
+samples/
+image/
+
+# Root-level test/debug files
+test_*.py
+test_*.spec
+test_*.txt
+
 # Build outputs
 Output/
 *.exe

@@ -1,3 +1,0 @@
-Passed: 81
-Failed: 0
-Skipped: 0
