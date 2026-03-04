@@ -1076,6 +1076,93 @@ Test that NEXA doesn't always give identical responses.
 
 ---
 
+## 4.21 — Kernel Governance: Priority Manager
+
+Tests for the `PriorityManager` — priority levels, preemption rules, and rejection logic.
+
+| # | Test Scenario | Expected Behavior | Result |
+|---|---|---|---|
+| 459 | Submit USER_COMMAND (P90) while IDLE_SUGGESTION (P20) active | USER_COMMAND can preempt — `can_preempt` returns True | |
+| 460 | Submit IDLE_SUGGESTION (P20) while USER_COMMAND (P90) active | Cannot preempt — `can_preempt` returns False | |
+| 461 | Submit two USER_COMMAND tasks (equal priority) | FIFO order — first submitted runs first, no preemption | |
+| 462 | Submit EMERGENCY (P110) while system is locked | NOT rejected — EMERGENCY always passes through locked state | |
+| 463 | Submit USER_COMMAND (P90) while system is locked | REJECTED — locked blocks everything below VOICE_INPUT (P100) | |
+| 464 | Submit VOICE_INPUT (P100) while system is locked | NOT rejected — VOICE_INPUT passes through locked state | |
+| 465 | Submit IDLE_SUGGESTION (P20) while another task active | REJECTED — background-class suppressed by active work | |
+| 466 | Submit IDLE_SUGGESTION (P20) while media playing | REJECTED — background-class suppressed by media active | |
+| 467 | Submit DOWNLOAD (P30) while task active | REJECTED — DOWNLOAD is background-class (≤40) | |
+| 468 | Submit MEDIA_PLAYBACK (P60) while task active | NOT rejected — P60 is above background-class threshold | |
+
+---
+
+## 4.22 — Kernel Governance: Task Queue
+
+Tests for the `TaskQueue` — task lifecycle, priority ordering, and state transitions.
+
+| # | Test Scenario | Expected Behavior | Result |
+|---|---|---|---|
+| 469 | Submit task → verify status | Task has status "pending" and unique task_id | |
+| 470 | Submit 3 tasks at P90, P60, P20 → call `next_task()` | Returns P90 task first (highest priority) | |
+| 471 | Submit 2 tasks at same priority → call `next_task()` twice | Returns in FIFO order (earlier creation first) | |
+| 472 | Activate a task → check `has_active_tasks()` | Returns True, `get_active_count()` = 1 | |
+| 473 | Complete an active task → check `has_active_tasks()` | Returns False, task status = "completed" | |
+| 474 | Cancel a pending task → call `next_task()` | Skips cancelled task, returns next valid pending | |
+| 475 | Cancel an active task | Task removed from active set, status = "cancelled" | |
+| 476 | `peek_active()` with multiple active tasks | Returns highest-priority active task | |
+| 477 | `clear()` all queues | Pending, active, completed all empty | |
+
+---
+
+## 4.23 — Kernel Governance: Event Bus
+
+Tests for the `EventBus` — pub/sub communication between modules.
+
+| # | Test Scenario | Expected Behavior | Result |
+|---|---|---|---|
+| 478 | Subscribe handler → publish event | Handler called with correct kwargs | |
+| 479 | Subscribe 3 handlers to same event → publish | All 3 handlers called in subscription order | |
+| 480 | Unsubscribe a handler → publish | Unsubscribed handler NOT called, others still called | |
+| 481 | Handler throws exception during publish | Exception logged, other handlers still execute (no propagation) | |
+| 482 | Publish event with no subscribers | No error — silent no-op | |
+| 483 | `clear()` → publish previously subscribed event | No handlers called | |
+
+---
+
+## 4.24 — Kernel Governance: Resource Manager (GPU)
+
+Tests for the `ResourceManager` — VRAM allocation gating and threshold enforcement.
+
+| # | Test Scenario | Expected Behavior | Result |
+|---|---|---|---|
+| 484 | `can_allocate(1000)` on fresh manager (8192MB total, 7372MB threshold) | Returns True — well within threshold | |
+| 485 | Allocate 7000MB → `can_allocate(500)` | Returns False — would exceed 7372MB threshold | |
+| 486 | Allocate 3000MB for task_A → release task_A → check available | Available VRAM restored to full after release | |
+| 487 | `allocate(task_id, 0)` — zero VRAM request | Returns True — zero-VRAM always succeeds | |
+| 488 | Allocate for task → complete task → verify release | VRAM released, `get_allocations()` empty for that task | |
+
+---
+
+## 4.25 — Kernel Governance: Integration (NexaKernel)
+
+Tests for the `NexaKernel` orchestrator — end-to-end task flow and state management.
+
+| # | Test Scenario | Expected Behavior | Result |
+|---|---|---|---|
+| 489 | `submit_task(USER_COMMAND)` on idle kernel | Returns task_id (not None), "task.submitted" event published | |
+| 490 | `submit_task(IDLE_SUGGESTION)` while kernel locked | Returns None (rejected), "task.rejected" event published | |
+| 491 | `activate_task` with GPU requirement → `complete_task` | GPU allocated on activate, released on complete | |
+| 492 | `cancel_task` on active GPU task | GPU VRAM released, "gpu.released" event published | |
+| 493 | `set_locked(True)` → verify `is_locked` property | Property returns True, "state.locked" event published | |
+| 494 | `set_media_active(True)` → verify `is_media_active` | Property returns True, "media.started" event published | |
+| 495 | `can_run_idle()` while locked | Returns False | |
+| 496 | `can_run_idle()` while media active | Returns False | |
+| 497 | `can_run_idle()` while task active | Returns False | |
+| 498 | `can_run_idle()` on idle, unlocked, no-media kernel | Returns True | |
+| 499 | `register_capability("tts", handler, ...)` → `get_capability("tts")` | Returns registered handler dict with correct defaults | |
+| 500 | `shutdown()` | All queues cleared, all allocations released, event bus cleared | |
+
+---
+
 # Regression & Edge Case Tests
 
 > Tests for known issues, boundary conditions, and system stability.
@@ -1086,12 +1173,12 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Input | Expected Behavior | Result |
 |---|---|---|---|
-| 459 | *(Complete silence for 30 seconds)* | No false triggers, stays idle | |
-| 460 | *(Background noise — TV, fan)* | No false triggers or gibberish commands | |
-| 461 | *(Whispered command)* "What time is it?" | Still recognized (Faster-Whisper sensitivity) | |
-| 462 | *(Shouted command)* "PLAY MUSIC" | Recognized without issues | |
-| 463 | *(Accented English)* "Open Chrome please" | Recognized correctly | |
-| 464 | *(Very fast speech)* "open chrome set volume 50 play music" | Recognized, possibly split into compound | |
+| 501 | *(Complete silence for 30 seconds)* | No false triggers, stays idle | |
+| 502 | *(Background noise — TV, fan)* | No false triggers or gibberish commands | |
+| 503 | *(Whispered command)* "What time is it?" | Still recognized (Faster-Whisper sensitivity) | |
+| 504 | *(Shouted command)* "PLAY MUSIC" | Recognized without issues | |
+| 505 | *(Accented English)* "Open Chrome please" | Recognized correctly | |
+| 506 | *(Very fast speech)* "open chrome set volume 50 play music" | Recognized, possibly split into compound | |
 
 ---
 
@@ -1099,10 +1186,10 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Test | Expected Behavior | Result |
 |---|---|---|---|
-| 465 | Play music → immediately give new command | Volume ducks, command processed, music continues | |
-| 466 | Start YouTube download → check download status repeatedly | Status updates correctly, no crash | |
-| 467 | Open multiple apps in rapid succession | All open without conflict | |
-| 468 | Take screenshot while in content mode | Blocked (content mode isolation) | |
+| 507 | Play music → immediately give new command | Volume ducks, command processed, music continues | |
+| 508 | Start YouTube download → check download status repeatedly | Status updates correctly, no crash | |
+| 509 | Open multiple apps in rapid succession | All open without conflict | |
+| 510 | Take screenshot while in content mode | Blocked (content mode isolation) | |
 
 ---
 
@@ -1110,11 +1197,11 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Test | Expected Behavior | Result |
 |---|---|---|---|
-| 469 | Store memory → restart NEXA → recall memory | Memory persists across restarts | |
-| 470 | Set dark theme → restart → check theme | Theme setting persists | |
-| 471 | Track goal → restart → get goals | Goals persist | |
-| 472 | Journal entry → restart → check emotional memory | Journal persists | |
-| 473 | Music shuffle ON → restart → check playback mode | Mode persists (or resets — document behavior) | |
+| 511 | Store memory → restart NEXA → recall memory | Memory persists across restarts | |
+| 512 | Set dark theme → restart → check theme | Theme setting persists | |
+| 513 | Track goal → restart → get goals | Goals persist | |
+| 514 | Journal entry → restart → check emotional memory | Journal persists | |
+| 515 | Music shuffle ON → restart → check playback mode | Mode persists (or resets — document behavior) | |
 
 ---
 
@@ -1122,15 +1209,15 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Test | Expected Behavior | Result |
 |---|---|---|---|
-| 474 | Voice orb animation during listening | Orb animates when mic active | |
-| 475 | Voice orb animation during thinking | Orb shows thinking state | |
-| 476 | Voice orb animation during speaking | Orb shows speaking state | |
-| 477 | Desktop companion (pet) idle animation | Shows idle state (8 states total) | |
-| 478 | Desktop companion during listening | Shows listening animation state | |
-| 479 | Desktop companion during thinking | Shows thinking animation state | |
-| 480 | Desktop companion during speaking | Shows speaking animation state | |
-| 481 | System tray — right click menu | All menu items functional | |
-| 482 | Memory Panel — filter buttons all work | Skills, Emotional, All filters functional | |
+| 516 | Voice orb animation during listening | Orb animates when mic active | |
+| 517 | Voice orb animation during thinking | Orb shows thinking state | |
+| 518 | Voice orb animation during speaking | Orb shows speaking state | |
+| 519 | Desktop companion (pet) idle animation | Shows idle state (8 states total) | |
+| 520 | Desktop companion during listening | Shows listening animation state | |
+| 521 | Desktop companion during thinking | Shows thinking animation state | |
+| 522 | Desktop companion during speaking | Shows speaking animation state | |
+| 523 | System tray — right click menu | All menu items functional | |
+| 524 | Memory Panel — filter buttons all work | Skills, Emotional, All filters functional | |
 
 ---
 
@@ -1138,11 +1225,11 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Test | Expected Behavior | Result |
 |---|---|---|---|
-| 483 | Kill Ollama process → give command | Detects LLM error, switches to error mode gracefully | |
-| 484 | Disconnect internet → "Search YouTube" | Detects offline, returns helpful message | |
-| 485 | Unplug headphones during TTS playback | TTS handles gracefully (no crash) | |
-| 486 | Fill disk to 99% → "Take a screenshot" | Returns storage error message | |
-| 487 | Rapidly alternate between online/offline mode | Stable state transitions, no crash | |
+| 525 | Kill Ollama process → give command | Detects LLM error, switches to error mode gracefully | |
+| 526 | Disconnect internet → "Search YouTube" | Detects offline, returns helpful message | |
+| 527 | Unplug headphones during TTS playback | TTS handles gracefully (no crash) | |
+| 528 | Fill disk to 99% → "Take a screenshot" | Returns storage error message | |
+| 529 | Rapidly alternate between online/offline mode | Stable state transitions, no crash | |
 
 ---
 
@@ -1150,9 +1237,9 @@ Test that NEXA doesn't always give identical responses.
 
 | # | Voice Command | Expected Behavior | Result |
 |---|---|---|---|
-| 488 | "Read the screen" | Returns disabled/not available message (Vision removed Phase 24) | |
-| 489 | "Describe my screen" | Returns disabled/not available message (Vision removed Phase 24) | |
-| 490 | "Read notifications" | Returns "Notification reading is currently unavailable" (Vision dependency removed) | |
+| 530 | "Read the screen" | Returns disabled/not available message (Vision removed Phase 24) | |
+| 531 | "Describe my screen" | Returns disabled/not available message (Vision removed Phase 24) | |
+| 532 | "Read notifications" | Returns "Notification reading is currently unavailable" (Vision dependency removed) | |
 
 ---
 
@@ -1162,9 +1249,9 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 
 | # | Voice Command | Expected Behavior | Result |
 |---|---|---|---|
-| 491 | "Select all" | Sends Ctrl+A via `select_all_text` | |
-| 492 | "Copy that" | Sends Ctrl+C via `copy_selected_text` | |
-| 493 | "Paste" | Sends Ctrl+V via `paste_clipboard` | |
+| 533 | "Select all" | Sends Ctrl+A via `select_all_text` | |
+| 534 | "Copy that" | Sends Ctrl+C via `copy_selected_text` | |
+| 535 | "Paste" | Sends Ctrl+V via `paste_clipboard` | |
 
 ---
 
@@ -1172,10 +1259,10 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 
 | # | Voice Command | Expected Behavior | Result |
 |---|---|---|---|
-| 494 | "Remember my name is José" | Stores with accent correctly | |
-| 495 | "Remember 日本語テスト" | Handles Unicode gracefully | |
-| 496 | "Search for C++ tutorial" | Handles special characters in search | |
-| 497 | "Open the file 'report (final).docx'" | Handles parentheses in filenames | |
+| 536 | "Remember my name is José" | Stores with accent correctly | |
+| 537 | "Remember 日本語テスト" | Handles Unicode gracefully | |
+| 538 | "Search for C++ tutorial" | Handles special characters in search | |
+| 539 | "Open the file 'report (final).docx'" | Handles parentheses in filenames | |
 
 ---
 
@@ -1183,9 +1270,9 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 
 | # | Test Scenario | Expected Behavior | Result |
 |---|---|---|---|
-| 498 | LLM returns valid function_call JSON | Correctly parsed and executed | |
-| 499 | LLM returns conversation-only JSON | Correct — no function call, just TTS response | |
-| 500 | LLM returns malformed JSON | Error handler catches, recovers gracefully | |
+| 540 | LLM returns valid function_call JSON | Correctly parsed and executed | |
+| 541 | LLM returns conversation-only JSON | Correct — no function call, just TTS response | |
+| 542 | LLM returns malformed JSON | Error handler catches, recovers gracefully | |
 
 ---
 
@@ -1268,7 +1355,7 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 | Journaling & Goals | 7 | | | |
 | **TOTAL Level 3** | **138** | | | |
 
-## Level 4 — Complex (Tests 314-458)
+## Level 4 — Complex (Tests 314-500)
 
 | Category | Total | Pass | Fail | Partial |
 |---|---|---|---|---|
@@ -1292,9 +1379,14 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 | Volume Ducking | 5 | | | |
 | Response Variation | 4 | | | |
 | Offline Comprehensive | 15 | | | |
-| **TOTAL Level 4** | **145** | | | |
+| Kernel Gov: Priority Manager | 10 | | | |
+| Kernel Gov: Task Queue | 9 | | | |
+| Kernel Gov: Event Bus | 6 | | | |
+| Kernel Gov: Resource Manager (GPU) | 5 | | | |
+| Kernel Gov: Integration (NexaKernel) | 12 | | | |
+| **TOTAL Level 4** | **187** | | | |
 
-## Regression & Edge Cases (Tests 459-500)
+## Regression & Edge Cases (Tests 501-542)
 
 | Category | Total | Pass | Fail | Partial |
 |---|---|---|---|---|
@@ -1318,9 +1410,9 @@ Note: `MouseController` exists internally but is NOT registered as voice command
 | Level 1 — Simple | 62 | | | | /62 |
 | Level 2 — Medium | 113 | | | | /113 |
 | Level 3 — High | 138 | | | | /138 |
-| Level 4 — Complex | 145 | | | | /145 |
+| Level 4 — Complex | 187 | | | | /187 |
 | Regression & Edge | 42 | | | | /42 |
-| **GRAND TOTAL** | **500** | | | | **/500** |
+| **GRAND TOTAL** | **542** | | | | **/542** |
 
 ---
 
