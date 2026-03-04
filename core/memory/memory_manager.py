@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timedelta
 
-from .memory_types import ConversationMemory, KnowledgeMemory, SkillMemory
+from .memory_types import ConversationMemory, KnowledgeMemory, SkillMemory, EmotionalMemory
 from .embedding_engine import EmbeddingEngine, get_embedding_engine
 from .memory_store import MemoryStore
 
@@ -351,6 +351,18 @@ class SmartMemoryManager:
                 r['similarity'] = 1.0 / (1.0 + distance)
             results.extend(know_results)
         
+        if memory_type in ['emotional', 'all']:
+            emo_results = self.store.search_similar(
+                MemoryStore.TABLE_EMOTIONAL,
+                embedding,
+                limit=limit
+            )
+            for r in emo_results:
+                r['memory_type'] = 'emotional'
+                distance = r.get('_distance', 999)
+                r['similarity'] = 1.0 / (1.0 + distance)
+            results.extend(emo_results)
+        
         # Sort by similarity
         results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
         
@@ -464,6 +476,117 @@ class SmartMemoryManager:
         """Get all knowledge facts."""
         return self.store.get_all(MemoryStore.TABLE_KNOWLEDGE, limit=limit)
     
+    # =========================================================================
+    # Emotional Memory Operations (Phase 30 — Smart Memory Integration)
+    # =========================================================================
+    
+    def store_emotional(
+        self,
+        content: str,
+        category: str = 'event',
+        emotion: str = 'neutral',
+        importance: float = 0.5,
+        tags: Optional[List[str]] = None,
+        expires_at: str = '',
+        metadata: str = '{}'
+    ) -> str:
+        """
+        Store an emotional memory in LanceDB.
+        
+        Args:
+            content: The emotional memory content (e.g., "User has exam tomorrow")
+            category: event, mood, goal, preference, milestone, journal
+            emotion: Associated mood at time of storage
+            importance: Memory importance (0.0 - 1.0)
+            tags: Optional topic tags
+            expires_at: Optional expiry timestamp as ISO string
+            metadata: Extra context as JSON string
+            
+        Returns:
+            Memory ID
+        """
+        # Generate embedding for semantic search
+        embedding = self.embedding.embed(content)
+        
+        # Create emotional memory object
+        memory = EmotionalMemory(
+            content=content,
+            category=category,
+            emotion=emotion,
+            embedding=embedding,
+            importance=importance,
+            tags=tags or [],
+            expires_at=expires_at,
+            metadata=metadata
+        )
+        
+        # Store in LanceDB
+        data = memory.to_dict()
+        data['vector'] = embedding.tolist()
+        
+        self.store.add(MemoryStore.TABLE_EMOTIONAL, data)
+        
+        logger.debug(f"💜 Stored emotional memory [{category}]: {memory.id[:8]}...")
+        return memory.id
+    
+    def get_emotional(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get all emotional memories from LanceDB.
+        
+        Args:
+            limit: Maximum results to return
+            
+        Returns:
+            List of emotional memory records
+        """
+        return self.store.get_all(MemoryStore.TABLE_EMOTIONAL, limit=limit)
+    
+    def get_emotional_by_category(self, category: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get emotional memories filtered by category.
+        
+        Args:
+            category: event, mood, goal, preference, milestone, journal
+            limit: Maximum results
+            
+        Returns:
+            List of emotional memories in that category
+        """
+        try:
+            return self.store.get_all(
+                MemoryStore.TABLE_EMOTIONAL,
+                filter_condition=f"category = '{category}'",
+                limit=limit
+            )
+        except Exception as e:
+            logger.warning(f"Emotional category query failed: {e}")
+            return []
+    
+    def recall_emotional_similar(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Find emotional memories similar to a query using vector search.
+        
+        Args:
+            query: Search query
+            limit: Maximum results
+            
+        Returns:
+            List of matching emotional memories with similarity scores
+        """
+        embedding = self.embedding.embed(query)
+        results = self.store.search_similar(
+            MemoryStore.TABLE_EMOTIONAL,
+            embedding,
+            limit=limit
+        )
+        
+        for r in results:
+            r['memory_type'] = 'emotional'
+            distance = r.get('_distance', 999)
+            r['similarity'] = 1.0 / (1.0 + distance)
+        
+        return results
+    
     def get_skill_stats(self, action: str) -> Optional[Dict[str, Any]]:
         """Get usage statistics for a specific action."""
         results = self.store.get_all(
@@ -490,7 +613,8 @@ class SmartMemoryManager:
         # Try all tables
         for table in [MemoryStore.TABLE_CONVERSATIONS, 
                       MemoryStore.TABLE_KNOWLEDGE, 
-                      MemoryStore.TABLE_SKILLS]:
+                      MemoryStore.TABLE_SKILLS,
+                      MemoryStore.TABLE_EMOTIONAL]:
             if self.store.delete(table, memory_id):
                 logger.info(f"🗑️ Forgot memory: {memory_id[:8]}...")
                 return True
@@ -570,7 +694,8 @@ class SmartMemoryManager:
         deleted = {
             'conversations': 0,
             'knowledge': 0,
-            'skills': 0
+            'skills': 0,
+            'emotional': 0
         }
         
         try:
@@ -584,9 +709,12 @@ class SmartMemoryManager:
             # Clear skills
             deleted['skills'] = self.store.delete_all(MemoryStore.TABLE_SKILLS)
             
+            # Clear emotional memories
+            deleted['emotional'] = self.store.delete_all(MemoryStore.TABLE_EMOTIONAL)
+            
             total = sum(deleted.values())
             logger.info(f"🗑️ Cleared all memory: {total} items deleted")
-            logger.info(f"   Conversations: {deleted['conversations']}, Knowledge: {deleted['knowledge']}, Skills: {deleted['skills']}")
+            logger.info(f"   Conversations: {deleted['conversations']}, Knowledge: {deleted['knowledge']}, Skills: {deleted['skills']}, Emotional: {deleted['emotional']}")
             
         except Exception as e:
             logger.error(f"Error clearing all memory: {e}")

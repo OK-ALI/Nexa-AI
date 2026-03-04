@@ -187,6 +187,79 @@ class KnowledgeMemory:
 
 
 @dataclass
+class EmotionalMemory:
+    """
+    Stores emotional context about the user — events, moods, goals,
+    journal entries, milestones, and preferences.
+
+    Integrated with LanceDB for vector-based semantic search and
+    displayed as pink/magenta nodes in the Neural Memory Panel.
+
+    Attributes:
+        id: Unique identifier (UUID)
+        content: The emotional memory content
+        category: Type — event, mood, goal, preference, milestone, journal
+        emotion: Associated mood at time of storage
+        embedding: 384-dim vector for semantic search
+        importance: Auto-calculated importance score (0.0 - 1.0)
+        created_at: When this was stored
+        expires_at: Optional expiry timestamp (ISO string or empty)
+        tags: Comma-separated topic tags
+        metadata: Extra context as JSON string
+    """
+    content: str
+    category: str = 'event'
+    emotion: str = 'neutral'
+    embedding: Optional[np.ndarray] = None
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    importance: float = 0.5
+    created_at: datetime = field(default_factory=datetime.now)
+    expires_at: str = ''
+    tags: List[str] = field(default_factory=list)
+    metadata: str = '{}'
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for LanceDB storage."""
+        return {
+            'id': self.id,
+            'content': self.content,
+            'category': self.category,
+            'emotion': self.emotion,
+            'vector': self.embedding.tolist() if self.embedding is not None else [],
+            'importance': self.importance,
+            'created_at': self.created_at.isoformat() if isinstance(self.created_at, datetime) else str(self.created_at),
+            'expires_at': self.expires_at,
+            'tags': ','.join(self.tags) if isinstance(self.tags, list) else str(self.tags),
+            'metadata': self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'EmotionalMemory':
+        """Create from dictionary (LanceDB retrieval)."""
+        created = data.get('created_at', '')
+        if isinstance(created, str) and created:
+            try:
+                created = datetime.fromisoformat(created)
+            except (ValueError, TypeError):
+                created = datetime.now()
+        elif not isinstance(created, datetime):
+            created = datetime.now()
+
+        return cls(
+            id=data['id'],
+            content=data.get('content', ''),
+            category=data.get('category', 'event'),
+            emotion=data.get('emotion', 'neutral'),
+            embedding=np.array(data['vector']) if data.get('vector') else None,
+            importance=data.get('importance', 0.5),
+            created_at=created,
+            expires_at=data.get('expires_at', ''),
+            tags=data.get('tags', '').split(',') if data.get('tags') else [],
+            metadata=data.get('metadata', '{}'),
+        )
+
+
+@dataclass
 class SkillMemory:
     """
     Tracks action patterns and usage statistics.
@@ -241,4 +314,4 @@ class SkillMemory:
 
 
 # Type alias for any memory type
-Memory = ConversationMemory | KnowledgeMemory | SkillMemory
+Memory = ConversationMemory | KnowledgeMemory | SkillMemory | EmotionalMemory

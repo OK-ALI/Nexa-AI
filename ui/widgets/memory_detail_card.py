@@ -446,6 +446,7 @@ class MemoryDetailCard(QWidget):
                 'conversation': 'conversation',
                 'knowledge': 'memory',
                 'skill': 'lightning',
+                'emotional': 'heart',
             }
             icon_name = icon_map.get(memory_type, 'thought')
             self.type_icon.setPixmap(icon_mgr.get_pixmap(icon_name, 24))

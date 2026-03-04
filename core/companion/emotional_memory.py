@@ -151,6 +151,11 @@ class EmotionalMemory:
         self._entries: Dict[str, List[EmotionalEntry]] = defaultdict(list)
         self._goals: Dict[str, GoalEntry] = {}  # id -> GoalEntry
 
+        # Smart Memory integration (LanceDB dual-write)
+        # Set via set_smart_memory() after brain initializes context_manager
+        self._smart_memory = None
+        self._event_bus = None  # Set via set_event_bus() for memory.updated events
+
         # Milestone tracking
         self._first_interaction_time: Optional[float] = None
         self._total_interactions: int = 0
@@ -161,6 +166,24 @@ class EmotionalMemory:
 
         logger.info("EmotionalMemory initialized: %d entries, %d goals",
                      sum(len(v) for v in self._entries.values()), len(self._goals))
+
+    def set_smart_memory(self, smart_memory) -> None:
+        """
+        Connect to SmartMemoryManager for LanceDB dual-write.
+
+        Args:
+            smart_memory: SmartMemoryManager instance from context_manager
+        """
+        self._smart_memory = smart_memory
+        logger.info("EmotionalMemory connected to Smart Memory (LanceDB)")
+
+    def set_event_bus(self, event_bus) -> None:
+        """
+        Attach EventBus for publishing memory.updated events.
+        Enables live refresh of the Neural Memory Panel when emotional memories are stored.
+        """
+        self._event_bus = event_bus
+        logger.info("EmotionalMemory connected to EventBus")
 
     def _get_default_path(self) -> Path:
         """Get the default path for emotional memory storage."""
@@ -261,9 +284,50 @@ class EmotionalMemory:
         self._entries[category].append(entry)
         self._save()
 
+        # Dual-write to LanceDB for vector search + Memory Panel display
+        self._store_to_lancedb(entry)
+
         logger.info("Stored emotional memory [%s]: %s (emotion=%s)",
                      category, content[:60], emotion)
         return entry.id
+
+    def _store_to_lancedb(self, entry: 'EmotionalEntry') -> None:
+        """
+        Store an emotional entry in LanceDB via SmartMemoryManager.
+        Runs in a background thread to avoid blocking.
+        """
+        if not self._smart_memory:
+            return
+
+        try:
+            import threading
+            import json
+
+            def store_async():
+                try:
+                    self._smart_memory.store_emotional(
+                        content=entry.content,
+                        category=entry.category,
+                        emotion=entry.emotion,
+                        importance=entry.importance,
+                        tags=entry.tags if entry.tags else [],
+                        expires_at=str(entry.expires_at) if entry.expires_at else '',
+                        metadata=json.dumps(entry.metadata) if entry.metadata else '{}'
+                    )
+                    logger.debug("Emotional entry %s stored in LanceDB", entry.id[:8])
+                    # Notify Memory Panel for live refresh
+                    if self._event_bus:
+                        try:
+                            self._event_bus.publish("memory.updated", source="emotional")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.debug("LanceDB emotional store failed (non-critical): %s", e)
+
+            threading.Thread(target=store_async, daemon=True).start()
+
+        except Exception as e:
+            logger.debug("Emotional LanceDB setup failed: %s", e)
 
     def store_mood_snapshot(self, mood: str, context: str = "", valence: float = 0.0) -> str:
         """

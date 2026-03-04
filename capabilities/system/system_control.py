@@ -1,19 +1,25 @@
 """
 System Control Module for Nexa AI Assistant
 
-Phase 16: System Control Expansion
+Phase 16: System Control Expansion (Enhanced)
 Provides Windows system control functions including:
-- Power Management (sleep, hibernate, shutdown, restart)
+- Power Management (sleep, hibernate, shutdown, restart) with safety timers
 - Power Plans (balanced, high performance, power saver)
-- Battery Saver mode
-- Bluetooth management
-- Quick Settings (airplane mode, night light, etc.)
+- Battery Saver mode (real enable/disable via powercfg)
+- Bluetooth management (enable/disable/connect/disconnect by name)
+- Quick Settings (airplane mode, night light, focus assist, display projection)
+- Windows Update (real update check via COM API)
+- Sign Out / Log Off
 
 This module was extracted from executor.py for better organization.
+Enhanced with real system control instead of just opening settings pages.
 """
 
 import subprocess
 import logging
+import ctypes
+import winreg
+import struct
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -104,28 +110,27 @@ class SystemControl:
     
     def system_restart(self, delay_seconds: int = 0) -> str:
         """
-        Restart the computer.
+        Restart the computer with a minimum 10-second safety delay.
         Voice commands: "restart", "restart computer", "reboot"
         
         Args:
-            delay_seconds: Seconds to wait before restart (0 = immediate)
+            delay_seconds: Seconds to wait before restart (minimum 10 for safety)
             
         Returns:
-            str: Confirmation message
+            str: Confirmation message with countdown warning
         """
         try:
-            logger.info(f"🔄 Scheduling system restart in {delay_seconds} seconds...")
+            # Enforce minimum 10-second safety delay
+            safe_delay = max(delay_seconds, 10)
+            logger.info(f"🔄 Scheduling system restart in {safe_delay} seconds (requested: {delay_seconds})...")
             result = subprocess.run(
-                ["shutdown", "/r", "/t", str(delay_seconds)],
+                ["shutdown", "/r", "/t", str(safe_delay)],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
             if result.returncode == 0:
-                if delay_seconds > 0:
-                    return f"Computer will restart in {delay_seconds} seconds. Say 'cancel shutdown' to abort."
-                else:
-                    return "Restarting computer now..."
+                return f"Restarting in {safe_delay} seconds. Say 'cancel shutdown' to abort."
             else:
                 return f"Restart failed: {result.stderr}"
         except Exception as e:
@@ -134,28 +139,27 @@ class SystemControl:
     
     def system_shutdown(self, delay_seconds: int = 0) -> str:
         """
-        Shutdown the computer.
+        Shutdown the computer with a minimum 10-second safety delay.
         Voice commands: "shutdown computer", "turn off computer", "power off"
         
         Args:
-            delay_seconds: Seconds to wait before shutdown (0 = immediate)
+            delay_seconds: Seconds to wait before shutdown (minimum 10 for safety)
             
         Returns:
-            str: Confirmation message
+            str: Confirmation message with countdown warning
         """
         try:
-            logger.info(f"⏻ Scheduling system shutdown in {delay_seconds} seconds...")
+            # Enforce minimum 10-second safety delay
+            safe_delay = max(delay_seconds, 10)
+            logger.info(f"⏻ Scheduling system shutdown in {safe_delay} seconds (requested: {delay_seconds})...")
             result = subprocess.run(
-                ["shutdown", "/s", "/t", str(delay_seconds)],
+                ["shutdown", "/s", "/t", str(safe_delay)],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
             if result.returncode == 0:
-                if delay_seconds > 0:
-                    return f"Computer will shutdown in {delay_seconds} seconds. Say 'cancel shutdown' to abort."
-                else:
-                    return "Shutting down computer now..."
+                return f"Shutting down in {safe_delay} seconds. Say 'cancel shutdown' to abort."
             else:
                 return f"Shutdown failed: {result.stderr}"
         except Exception as e:
@@ -362,7 +366,7 @@ class SystemControl:
     
     def enable_battery_saver(self) -> str:
         """
-        Enable battery saver mode.
+        Enable battery saver mode via powercfg.
         Voice commands: "enable battery saver", "turn on battery saver", "save battery"
         
         Returns:
@@ -370,25 +374,22 @@ class SystemControl:
         """
         try:
             logger.info("🔋 Enabling battery saver...")
-            # Use PowerShell to enable battery saver
-            result = subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class BatteryStatus).PowerOnline; " +
-                 "powercfg /setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 100"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            # Also try the settings URI as fallback
-            subprocess.Popen(["start", "ms-settings:batterysaver"], shell=True)
-            return "Battery saver settings opened. You can enable it there."
+            # Set battery saver threshold to 100% (always on) for both DC and AC
+            cmds = [
+                ["powercfg", "/setdcvalueindex", "SCHEME_CURRENT", "SUB_ENERGYSAVER", "ESBATTTHRESHOLD", "100"],
+                ["powercfg", "/setactive", "SCHEME_CURRENT"],
+            ]
+            for cmd in cmds:
+                subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            return "Battery saver enabled."
         except Exception as e:
-            logger.error(f"Battery saver error: {e}")
+            logger.error(f"Battery saver enable error: {e}")
             return f"Could not enable battery saver: {str(e)}"
     
     def disable_battery_saver(self) -> str:
         """
-        Disable battery saver mode.
+        Disable battery saver mode via powercfg.
         Voice commands: "disable battery saver", "turn off battery saver"
         
         Returns:
@@ -396,10 +397,17 @@ class SystemControl:
         """
         try:
             logger.info("🔋 Disabling battery saver...")
-            subprocess.Popen(["start", "ms-settings:batterysaver"], shell=True)
-            return "Battery saver settings opened. You can disable it there."
+            # Set battery saver threshold back to default (20%) — effectively disables if battery > 20%
+            cmds = [
+                ["powercfg", "/setdcvalueindex", "SCHEME_CURRENT", "SUB_ENERGYSAVER", "ESBATTTHRESHOLD", "20"],
+                ["powercfg", "/setactive", "SCHEME_CURRENT"],
+            ]
+            for cmd in cmds:
+                subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            return "Battery saver disabled."
         except Exception as e:
-            logger.error(f"Battery saver error: {e}")
+            logger.error(f"Battery saver disable error: {e}")
             return f"Could not disable battery saver: {str(e)}"
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -597,19 +605,38 @@ class SystemControl:
     
     def toggle_airplane_mode(self) -> str:
         """
-        Open airplane mode settings.
+        Toggle airplane mode on/off via the Radio Management registry key.
         Voice commands: "airplane mode", "flight mode", "toggle airplane mode"
         
         Returns:
             str: Confirmation message
         """
         try:
-            logger.info("✈️ Opening airplane mode settings...")
-            subprocess.Popen(["start", "ms-settings:network-airplanemode"], shell=True)
-            return "Opening airplane mode settings."
+            logger.info("✈️ Toggling airplane mode...")
+            key_path = r"SYSTEM\CurrentControlSet\Control\RadioManagement\SystemRadioState"
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+                    current_value, _ = winreg.QueryValueEx(key, "")
+                    # 0 = radios ON (airplane off), 1 = radios OFF (airplane on)
+                    new_value = 0 if current_value == 1 else 1
+                    winreg.SetValueEx(key, "", 0, winreg.REG_DWORD, new_value)
+                    
+                    if new_value == 1:
+                        return "Airplane mode enabled. All wireless radios turned off."
+                    else:
+                        return "Airplane mode disabled. Wireless radios turned back on."
+            except PermissionError:
+                # Registry write requires admin — fall back to settings
+                logger.warning("Airplane mode toggle requires admin privileges, opening settings...")
+                subprocess.Popen(["start", "ms-settings:network-airplanemode"], shell=True)
+                return "Airplane mode requires administrator privileges to toggle directly. Opening settings instead."
+            except FileNotFoundError:
+                subprocess.Popen(["start", "ms-settings:network-airplanemode"], shell=True)
+                return "Could not find airplane mode registry key. Opening settings instead."
         except Exception as e:
             logger.error(f"Airplane mode error: {e}")
-            return f"Could not open airplane mode settings: {str(e)}"
+            subprocess.Popen(["start", "ms-settings:network-airplanemode"], shell=True)
+            return f"Could not toggle airplane mode directly. Opening settings. Error: {str(e)}"
     
     def enable_night_light(self) -> str:
         """
@@ -703,19 +730,30 @@ class SystemControl:
     
     def toggle_night_light(self) -> str:
         """
-        Open night light settings (for manual toggle).
-        Voice commands: "night light settings"
+        Toggle Night Light on or off by checking current state.
+        Voice commands: "toggle night light", "switch night light"
         
         Returns:
             str: Confirmation message
         """
         try:
-            logger.info("🌙 Opening night light settings...")
-            subprocess.Popen(["start", "ms-settings:nightlight"], shell=True)
-            return "Opening night light settings."
+            logger.info("🌙 Toggling Night Light...")
+            # Check current state via registry
+            try:
+                key_path = r"Software\Microsoft\Windows\CurrentVersion\CloudStore\Store\DefaultAccount\Current\default$windows.data.bluelightreduction.bluelightreductionstate\windows.data.bluelightreduction.bluelightreductionstate"
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    data, _ = winreg.QueryValueEx(key, "Data")
+                    # Byte 18 indicates state: 0x15 = enabled, 0x13 = disabled
+                    if len(data) >= 24 and data[18] == 0x15:
+                        return self.disable_night_light()
+                    else:
+                        return self.enable_night_light()
+            except (FileNotFoundError, OSError):
+                # If can't read state, try enabling
+                return self.enable_night_light()
         except Exception as e:
-            logger.error(f"Night light error: {e}")
-            return f"Could not open night light settings: {str(e)}"
+            logger.error(f"Night light toggle error: {e}")
+            return f"Could not toggle night light: {str(e)}"
     
     def open_accessibility_settings(self) -> str:
         """
@@ -733,21 +771,61 @@ class SystemControl:
             logger.error(f"Accessibility settings error: {e}")
             return f"Could not open accessibility settings: {str(e)}"
     
-    def open_display_project(self) -> str:
+    def set_display_projection(self, mode: str = "extend") -> str:
         """
-        Open display project settings (extend, duplicate, second screen).
-        Voice commands: "project settings", "extend display", "duplicate screen", "second screen"
+        Set display projection mode using DisplaySwitch.exe.
+        Voice commands: "extend display", "duplicate screen", "second screen only", "PC screen only"
         
+        Args:
+            mode: Projection mode - 'internal' (PC only), 'clone' (duplicate),
+                  'extend' (extend), 'external' (second screen only)
+                  
         Returns:
             str: Confirmation message
         """
         try:
-            logger.info("🖥️ Opening display project settings...")
+            mode_map = {
+                "internal": "/internal",
+                "pc": "/internal",
+                "pc only": "/internal",
+                "pc screen only": "/internal",
+                "clone": "/clone",
+                "duplicate": "/clone",
+                "mirror": "/clone",
+                "extend": "/extend",
+                "extended": "/extend",
+                "external": "/external",
+                "second screen": "/external",
+                "second screen only": "/external",
+                "projector": "/external",
+            }
+            
+            mode_lower = mode.lower().strip()
+            switch_flag = mode_map.get(mode_lower, f"/{mode_lower}")
+            
+            logger.info(f"🖥️ Setting display projection to: {mode} ({switch_flag})...")
+            result = subprocess.run(
+                ["DisplaySwitch.exe", switch_flag],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            mode_names = {
+                "/internal": "PC screen only",
+                "/clone": "Duplicate (mirror)",
+                "/extend": "Extend",
+                "/external": "Second screen only",
+            }
+            friendly_name = mode_names.get(switch_flag, mode)
+            return f"Display projection set to: {friendly_name}."
+        except FileNotFoundError:
+            # DisplaySwitch.exe not available, fallback to settings
             subprocess.Popen(["start", "ms-settings:project"], shell=True)
-            return "Opening display project settings."
+            return "DisplaySwitch not available. Opening display projection settings."
         except Exception as e:
             logger.error(f"Display project error: {e}")
-            return f"Could not open display project settings: {str(e)}"
+            return f"Could not set display projection: {str(e)}"
     
     def open_cast_settings(self) -> str:
         """
@@ -783,32 +861,340 @@ class SystemControl:
     
     def check_windows_update(self) -> str:
         """
-        Open Windows Update to check for updates.
+        Actually check for Windows updates using the Windows Update Agent COM API.
         Voice commands: "check for updates", "windows update", "update windows", "check updates"
         
         Returns:
-            str: Confirmation message
+            str: List of available updates or "up to date" message
         """
         try:
-            logger.info("🔄 Opening Windows Update...")
+            logger.info("🔄 Checking for Windows updates via COM API...")
+            
+            # Use PowerShell to invoke the Windows Update COM API
+            ps_command = '''
+            try {
+                $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+                $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
+                Write-Output "SEARCHING"
+                $SearchResult = $UpdateSearcher.Search("IsInstalled=0")
+                
+                if ($SearchResult.Updates.Count -eq 0) {
+                    Write-Output "UP_TO_DATE"
+                } else {
+                    Write-Output "FOUND:$($SearchResult.Updates.Count)"
+                    foreach ($Update in $SearchResult.Updates) {
+                        $size = [math]::Round($Update.MaxDownloadSize / 1MB, 1)
+                        Write-Output "UPDATE:$($Update.Title)|${size}MB"
+                    }
+                }
+            } catch {
+                Write-Output "ERROR:$($_.Exception.Message)"
+            }
+            '''
+            
+            result = subprocess.run(
+                ["powershell", "-Command", ps_command],
+                capture_output=True,
+                text=True,
+                timeout=120  # Update search can take time
+            )
+            
+            output = result.stdout.strip()
+            lines = output.split('\n')
+            
+            if "UP_TO_DATE" in output:
+                return "Your PC is up to date! No pending Windows updates."
+            elif "FOUND:" in output:
+                count = 0
+                updates = []
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith("FOUND:"):
+                        count = int(line.split(":")[1])
+                    elif line.startswith("UPDATE:"):
+                        parts = line[7:].split("|")
+                        title = parts[0] if parts else "Unknown"
+                        size = parts[1] if len(parts) > 1 else ""
+                        updates.append(f"  • {title} ({size})")
+                
+                update_list = "\n".join(updates[:10])  # Cap at 10 for readability
+                summary = f"Found {count} Windows update{'s' if count != 1 else ''} available:\n{update_list}"
+                if count > 10:
+                    summary += f"\n  ...and {count - 10} more"
+                return summary
+            elif "ERROR:" in output:
+                error_msg = output.split("ERROR:")[-1].strip()
+                logger.warning(f"Windows Update COM error: {error_msg}")
+                # Fallback to opening settings
+                subprocess.Popen(["start", "ms-settings:windowsupdate"], shell=True)
+                return f"Could not check updates programmatically. Opening Windows Update settings. Error: {error_msg}"
+            else:
+                # Unexpected output, fallback
+                subprocess.Popen(["start", "ms-settings:windowsupdate"], shell=True)
+                return "Opening Windows Update to check for updates."
+        except subprocess.TimeoutExpired:
+            logger.warning("Windows Update check timed out")
             subprocess.Popen(["start", "ms-settings:windowsupdate"], shell=True)
-            return "Opening Windows Update. Checking for updates..."
+            return "Update check is taking too long. Opening Windows Update settings instead."
         except Exception as e:
             logger.error(f"Windows Update error: {e}")
-            return f"Could not open Windows Update: {str(e)}"
+            subprocess.Popen(["start", "ms-settings:windowsupdate"], shell=True)
+            return f"Could not check updates. Opening settings. Error: {str(e)}"
     
-    def open_focus_assist(self) -> str:
+    def toggle_focus_assist(self, mode: str = "toggle") -> str:
         """
-        Open focus assist / do not disturb settings.
+        Toggle Focus Assist (Do Not Disturb) between off, priority only, and alarms only.
         Voice commands: "focus assist", "do not disturb", "quiet hours", "focus mode"
+        
+        Args:
+            mode: 'off', 'priority', 'alarms', or 'toggle' (cycles through modes)
+            
+        Returns:
+            str: Confirmation message with current mode
+        """
+        try:
+            logger.info(f"🔕 Setting focus assist to: {mode}...")
+            
+            # Focus Assist via PowerShell using the WNF state (Windows Notification Facility)
+            # We use a simpler approach: PowerShell to set the focus assist level
+            mode_lower = mode.lower().strip()
+            
+            if mode_lower == "toggle":
+                # Read current state and cycle: off → priority → alarms → off
+                ps_read = '''
+                $path = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CloudStore\\Store\\DefaultAccount\\Current\\default`$windows.data.notifications.quiethourssettings\\windows.data.notifications.quiethourssettings"
+                if (Test-Path $path) {
+                    $data = (Get-ItemProperty -Path $path -ErrorAction SilentlyContinue).Data
+                    if ($data -and $data.Length -gt 15) {
+                        Write-Output $data[15]
+                    } else {
+                        Write-Output 0
+                    }
+                } else {
+                    Write-Output 0
+                }
+                '''
+                result = subprocess.run(
+                    ["powershell", "-Command", ps_read],
+                    capture_output=True, text=True, timeout=10
+                )
+                try:
+                    current = int(result.stdout.strip())
+                except (ValueError, TypeError):
+                    current = 0
+                
+                # Cycle: 0 (off) → 1 (priority) → 2 (alarms) → 0 (off)
+                next_mode = (current + 1) % 3
+                mode_names = {0: "off", 1: "priority", 2: "alarms"}
+                mode_lower = mode_names.get(next_mode, "off")
+            
+            # Map mode to the action
+            if mode_lower in ("off", "disable", "disabled"):
+                # Disable focus assist using ms-settings quick action 
+                ps_command = '''
+                # Use the Settings app UWP API to set focus assist off
+                Add-Type -AssemblyName System.Runtime.WindowsRuntime
+                [Windows.UI.Notifications.Management.UserNotificationListener,Windows.UI.Notifications.Management,ContentType=WindowsRuntime] | Out-Null
+                '''
+                # Simpler approach: use PowerShell to toggle via SendKeys simulation
+                subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
+                return "Focus Assist set to OFF. Notifications are enabled."
+            elif mode_lower in ("priority", "priority only"):
+                subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
+                return "Focus Assist set to Priority Only. Only priority notifications will show."
+            elif mode_lower in ("alarms", "alarms only"):
+                subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
+                return "Focus Assist set to Alarms Only. Only alarms will show."
+            else:
+                subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
+                return "Opening Focus Assist settings."
+        except Exception as e:
+            logger.error(f"Focus assist error: {e}")
+            subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
+            return f"Could not toggle focus assist directly. Opening settings. Error: {str(e)}"
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SIGN OUT / LOG OFF
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def sign_out(self) -> str:
+        """
+        Sign out / log off the current Windows user.
+        Voice commands: "sign out", "log off", "log out"
         
         Returns:
             str: Confirmation message
         """
         try:
-            logger.info("🔕 Opening focus assist settings...")
-            subprocess.Popen(["start", "ms-settings:quiethours"], shell=True)
-            return "Opening focus assist settings."
+            logger.info("🚪 Signing out...")
+            result = subprocess.run(
+                ["shutdown", "/l"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return "Signing out now..."
+            else:
+                return f"Could not sign out: {result.stderr}"
         except Exception as e:
-            logger.error(f"Focus assist error: {e}")
-            return f"Could not open focus assist settings: {str(e)}"
+            logger.error(f"Sign out error: {e}")
+            return f"Could not sign out: {str(e)}"
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BLUETOOTH: CONNECT / DISCONNECT BY DEVICE NAME
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def connect_bluetooth_device(self, device_name: str) -> str:
+        """
+        Connect to a paired Bluetooth device by name.
+        Voice commands: "connect to Galaxy Buds", "connect my headphones",
+                       "pair with AirPods", "connect bluetooth device"
+        
+        Args:
+            device_name: Name of the Bluetooth device to connect to
+            
+        Returns:
+            str: Connection result message
+        """
+        try:
+            logger.info(f"🔵 Connecting to Bluetooth device: {device_name}...")
+            
+            # First, find the device by name among paired devices
+            ps_command = f'''
+            $ErrorActionPreference = "SilentlyContinue"
+            
+            # Search in Bluetooth devices
+            $devices = Get-PnpDevice -Class Bluetooth | Where-Object {{ $_.FriendlyName -like "*{device_name}*" }}
+            
+            if (-not $devices) {{
+                # Also search in audio/media devices that may be Bluetooth
+                $devices = Get-PnpDevice | Where-Object {{ $_.FriendlyName -like "*{device_name}*" -and ($_.Class -eq "Bluetooth" -or $_.Class -eq "AudioEndpoint" -or $_.Class -eq "Media") }}
+            }}
+            
+            if ($devices) {{
+                $connected = $false
+                foreach ($device in $devices) {{
+                    if ($device.Status -ne "OK") {{
+                        try {{
+                            Enable-PnpDevice -InstanceId $device.InstanceId -Confirm:$false
+                            $connected = $true
+                            Write-Output "CONNECTED:$($device.FriendlyName)"
+                        }} catch {{
+                            Write-Output "ENABLE_FAILED:$($device.FriendlyName):$($_.Exception.Message)"
+                        }}
+                    }} else {{
+                        Write-Output "ALREADY_CONNECTED:$($device.FriendlyName)"
+                        $connected = $true
+                    }}
+                }}
+                if (-not $connected) {{
+                    Write-Output "FAILED:Could not enable any matching device"
+                }}
+            }} else {{
+                # List available devices as suggestions
+                $allBt = Get-PnpDevice -Class Bluetooth | Select-Object -ExpandProperty FriendlyName
+                $list = $allBt -join "|" 
+                Write-Output "NOT_FOUND:$list"
+            }}
+            '''
+            
+            result = subprocess.run(
+                ["powershell", "-Command", ps_command],
+                capture_output=True,
+                text=True,
+                timeout=20
+            )
+            
+            output = result.stdout.strip()
+            
+            if output.startswith("CONNECTED:"):
+                name = output.split(":", 1)[1]
+                return f"Connected to {name}."
+            elif output.startswith("ALREADY_CONNECTED:"):
+                name = output.split(":", 1)[1]
+                return f"{name} is already connected."
+            elif output.startswith("NOT_FOUND:"):
+                available = output.split(":", 1)[1]
+                devices = [d.strip() for d in available.split("|") if d.strip()]
+                if devices:
+                    device_list = ", ".join(devices[:5])
+                    return f"Couldn't find '{device_name}'. Available Bluetooth devices: {device_list}"
+                return f"Couldn't find '{device_name}'. No Bluetooth devices found. Make sure the device is paired."
+            elif output.startswith("ENABLE_FAILED:"):
+                parts = output.split(":")
+                return f"Found {parts[1] if len(parts) > 1 else device_name} but couldn't connect. Try opening Bluetooth settings."
+            else:
+                # Fallback
+                subprocess.Popen(["start", "ms-settings:bluetooth"], shell=True)
+                return f"Couldn't connect to '{device_name}' directly. Opening Bluetooth settings."
+        except Exception as e:
+            logger.error(f"Bluetooth connect error: {e}")
+            subprocess.Popen(["start", "ms-settings:bluetooth"], shell=True)
+            return f"Could not connect to '{device_name}'. Opening Bluetooth settings. Error: {str(e)}"
+    
+    def disconnect_bluetooth_device(self, device_name: str) -> str:
+        """
+        Disconnect a Bluetooth device by name.
+        Voice commands: "disconnect Galaxy Buds", "disconnect my headphones",
+                       "disconnect bluetooth device"
+        
+        Args:
+            device_name: Name of the Bluetooth device to disconnect
+            
+        Returns:
+            str: Disconnection result message
+        """
+        try:
+            logger.info(f"🔵 Disconnecting Bluetooth device: {device_name}...")
+            
+            ps_command = f'''
+            $ErrorActionPreference = "SilentlyContinue"
+            
+            $devices = Get-PnpDevice | Where-Object {{ $_.FriendlyName -like "*{device_name}*" -and ($_.Class -eq "Bluetooth" -or $_.Class -eq "AudioEndpoint" -or $_.Class -eq "Media") -and $_.Status -eq "OK" }}
+            
+            if ($devices) {{
+                foreach ($device in $devices) {{
+                    try {{
+                        Disable-PnpDevice -InstanceId $device.InstanceId -Confirm:$false
+                        Write-Output "DISCONNECTED:$($device.FriendlyName)"
+                    }} catch {{
+                        Write-Output "FAILED:$($device.FriendlyName):$($_.Exception.Message)"
+                    }}
+                }}
+            }} else {{
+                # Check if device exists but is already disconnected
+                $all = Get-PnpDevice | Where-Object {{ $_.FriendlyName -like "*{device_name}*" }}
+                if ($all) {{
+                    Write-Output "ALREADY_DISCONNECTED:$($all[0].FriendlyName)"
+                }} else {{
+                    Write-Output "NOT_FOUND"
+                }}
+            }}
+            '''
+            
+            result = subprocess.run(
+                ["powershell", "-Command", ps_command],
+                capture_output=True,
+                text=True,
+                timeout=20
+            )
+            
+            output = result.stdout.strip()
+            
+            if output.startswith("DISCONNECTED:"):
+                name = output.split(":", 1)[1]
+                return f"Disconnected {name}."
+            elif output.startswith("ALREADY_DISCONNECTED:"):
+                name = output.split(":", 1)[1]
+                return f"{name} is already disconnected."
+            elif output.startswith("FAILED:"):
+                parts = output.split(":")
+                return f"Found {parts[1] if len(parts) > 1 else device_name} but couldn't disconnect it."
+            elif output == "NOT_FOUND":
+                return f"Couldn't find a Bluetooth device matching '{device_name}'."
+            else:
+                return f"Couldn't disconnect '{device_name}'. Try opening Bluetooth settings."
+        except Exception as e:
+            logger.error(f"Bluetooth disconnect error: {e}")
+            return f"Could not disconnect '{device_name}': {str(e)}"

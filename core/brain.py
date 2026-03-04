@@ -304,6 +304,10 @@ class NexaBrain:
                 self.emotional_memory = init_emotional_memory()
                 self.event_tracker = init_event_tracker()
                 
+                # Connect emotional memory to Smart Memory (LanceDB dual-write)
+                if self.emotional_memory and hasattr(self.context_manager, 'smart_memory') and self.context_manager.smart_memory:
+                    self.emotional_memory.set_smart_memory(self.context_manager.smart_memory)
+                
                 # Set mood shift callback for logging
                 if self.mood_tracker:
                     def on_mood_shift(old_mood: str, new_mood: str, valence_delta: float):
@@ -3816,6 +3820,11 @@ User request: {user_text}"""
         if hasattr(self, 'context_manager') and self.context_manager:
             if hasattr(self.context_manager, 'set_event_bus'):
                 self.context_manager.set_event_bus(kernel.event_bus)
+        
+        # Wire emotional_memory to EventBus for live Memory Panel refresh
+        if hasattr(self, 'emotional_memory') and self.emotional_memory:
+            if hasattr(self.emotional_memory, 'set_event_bus'):
+                self.emotional_memory.set_event_bus(kernel.event_bus)
         
         # Part 3: Auto-cleanup old memories on startup (30-day retention)
         self._schedule_memory_cleanup()

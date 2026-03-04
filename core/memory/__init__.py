@@ -3,7 +3,7 @@ Smart Memory Package - Nexa's Intelligent Memory System
 Uses LanceDB for vector storage and sentence-transformers for embeddings.
 """
 
-from .memory_types import ConversationMemory, KnowledgeMemory, SkillMemory
+from .memory_types import ConversationMemory, KnowledgeMemory, SkillMemory, EmotionalMemory
 from .embedding_engine import EmbeddingEngine
 from .memory_store import MemoryStore
 from .memory_manager import SmartMemoryManager
@@ -15,6 +15,7 @@ __all__ = [
     'ConversationMemory',
     'KnowledgeMemory', 
     'SkillMemory',
+    'EmotionalMemory',
     'EmbeddingEngine',
     'MemoryStore',
     'SmartMemoryManager',

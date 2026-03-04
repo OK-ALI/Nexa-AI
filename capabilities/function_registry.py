@@ -1108,15 +1108,15 @@ class FunctionRegistry:
         self.register(
             "system_restart",
             lambda delay_seconds=0: self.system_control.system_restart(delay_seconds=delay_seconds),
-            "Restart the computer. Voice commands: 'restart', 'restart computer', 'reboot'",
-            {"delay_seconds": "Seconds to wait before restart (0 = immediate, default 0)"}
+            "Restart the computer with a minimum 10-second safety delay. User can cancel by saying 'cancel shutdown'. Voice commands: 'restart', 'restart computer', 'reboot'",
+            {"delay_seconds": "Seconds to wait before restart (minimum 10 for safety, default 10)"}
         )
         
         self.register(
             "system_shutdown",
             lambda delay_seconds=0: self.system_control.system_shutdown(delay_seconds=delay_seconds),
-            "Shutdown the computer. Voice commands: 'shutdown computer', 'turn off computer', 'power off'. NOTE: This is NOT 'shutdown nexa' - use exit_nexa for that.",
-            {"delay_seconds": "Seconds to wait before shutdown (0 = immediate, default 0)"}
+            "Shutdown the computer with a minimum 10-second safety delay. User can cancel by saying 'cancel shutdown'. Voice commands: 'shutdown computer', 'turn off computer', 'power off'. NOTE: This is NOT 'shutdown nexa' - use exit_nexa for that.",
+            {"delay_seconds": "Seconds to wait before shutdown (minimum 10 for safety, default 10)"}
         )
         
         self.register(
@@ -1173,7 +1173,7 @@ class FunctionRegistry:
         self.register(
             "disable_battery_saver",
             self.system_control.disable_battery_saver,
-            "Disable battery saver mode. Voice commands: 'disable battery saver', 'turn off battery saver'",
+            "Disable battery saver mode (resets threshold to 20 percent). Voice commands: 'disable battery saver', 'turn off battery saver'",
             {}
         )
         
@@ -1213,11 +1213,25 @@ class FunctionRegistry:
             {}
         )
         
+        self.register(
+            "connect_bluetooth_device",
+            lambda device_name: self.system_control.connect_bluetooth_device(device_name=device_name),
+            "Connect to a paired Bluetooth device by name. Voice commands: 'connect to Galaxy Buds', 'connect my headphones', 'connect AirPods'",
+            {"device_name": "Name of the Bluetooth device to connect to (e.g., 'Galaxy Buds Pro', 'AirPods', 'JBL Speaker')"}
+        )
+        
+        self.register(
+            "disconnect_bluetooth_device",
+            lambda device_name: self.system_control.disconnect_bluetooth_device(device_name=device_name),
+            "Disconnect a Bluetooth device by name. Voice commands: 'disconnect Galaxy Buds', 'disconnect my headphones'",
+            {"device_name": "Name of the Bluetooth device to disconnect"}
+        )
+        
         # ===== PHASE 16: QUICK SETTINGS =====
         self.register(
             "toggle_airplane_mode",
             self.system_control.toggle_airplane_mode,
-            "Open airplane mode settings. Voice commands: 'airplane mode', 'flight mode', 'toggle airplane mode'",
+            "Toggle airplane mode on or off. Actually toggles via registry, not just settings. Voice commands: 'airplane mode', 'flight mode', 'toggle airplane mode'",
             {}
         )
         
@@ -1238,7 +1252,7 @@ class FunctionRegistry:
         self.register(
             "toggle_night_light",
             self.system_control.toggle_night_light,
-            "Open night light settings. Voice commands: 'night light settings'",
+            "Toggle Night Light on or off (checks current state and switches). Voice commands: 'toggle night light', 'switch night light'",
             {}
         )
         
@@ -1250,10 +1264,10 @@ class FunctionRegistry:
         )
         
         self.register(
-            "open_display_project",
-            self.system_control.open_display_project,
-            "Open display project settings for second screen. Voice commands: 'project settings', 'extend display', 'duplicate screen', 'second screen'",
-            {}
+            "set_display_projection",
+            lambda mode="extend": self.system_control.set_display_projection(mode=mode),
+            "Set display projection mode (PC only, duplicate, extend, second screen only). Voice commands: 'extend display', 'duplicate screen', 'second screen only', 'PC screen only'",
+            {"mode": "Projection mode: 'internal' (PC only), 'clone' (duplicate/mirror), 'extend', 'external' (second screen only)"}
         )
         
         self.register(
@@ -1273,14 +1287,21 @@ class FunctionRegistry:
         self.register(
             "check_windows_update",
             self.system_control.check_windows_update,
-            "Open Windows Update to check for updates. Voice commands: 'check for updates', 'windows update', 'update windows'",
+            "Actually check for pending Windows updates and return update names/counts. Voice commands: 'check for updates', 'windows update', 'update windows', 'any updates available'",
             {}
         )
         
         self.register(
-            "open_focus_assist",
-            self.system_control.open_focus_assist,
-            "Open focus assist / do not disturb settings. Voice commands: 'focus assist', 'do not disturb', 'focus mode'",
+            "toggle_focus_assist",
+            lambda mode="toggle": self.system_control.toggle_focus_assist(mode=mode),
+            "Toggle Focus Assist / Do Not Disturb. Cycles through Off, Priority Only, Alarms Only. Voice commands: 'focus assist', 'do not disturb', 'focus mode', 'quiet hours'",
+            {"mode": "Focus assist mode: 'off', 'priority', 'alarms', or 'toggle' (cycles through, default)"}
+        )
+        
+        self.register(
+            "sign_out",
+            self.system_control.sign_out,
+            "Sign out / log off the current Windows user. Voice commands: 'sign out', 'log off', 'log out'",
             {}
         )
         
@@ -1523,6 +1544,13 @@ class FunctionRegistry:
                     if sm and hasattr(sm, 'track_skill'):
                         sm.track_skill(action, params, success)
                         logger.debug(f"🎯 Tracked skill: {action} (success={success})")
+                        # Notify Memory Panel for live refresh
+                        eb = getattr(self.context_manager, '_event_bus', None)
+                        if eb:
+                            try:
+                                eb.publish("memory.updated", source="skill")
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.debug(f"Skill tracking failed (non-critical): {e}")
             

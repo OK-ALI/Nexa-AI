@@ -31,6 +31,7 @@ class MemoryStore:
     TABLE_CONVERSATIONS = "conversations"
     TABLE_KNOWLEDGE = "knowledge"
     TABLE_SKILLS = "skills"
+    TABLE_EMOTIONAL = "emotional"
     
     # Embedding dimension
     VECTOR_DIM = 384
@@ -172,6 +173,23 @@ class MemoryStore:
             ])
             self._db.create_table(self.TABLE_SKILLS, schema=schema)
             logger.info(f"📋 Created table: {self.TABLE_SKILLS}")
+        
+        # Emotional table schema (Phase 30 — Smart Memory integration)
+        if self.TABLE_EMOTIONAL not in existing_tables:
+            schema = pa.schema([
+                pa.field("id", pa.string()),
+                pa.field("content", pa.string()),
+                pa.field("category", pa.string()),       # event, mood, goal, preference, milestone, journal
+                pa.field("emotion", pa.string()),         # Associated mood at time of storage
+                pa.field("vector", pa.list_(pa.float32(), self.VECTOR_DIM)),
+                pa.field("importance", pa.float32()),
+                pa.field("created_at", pa.string()),
+                pa.field("expires_at", pa.string()),
+                pa.field("tags", pa.string()),            # Comma-separated tags
+                pa.field("metadata", pa.string()),        # JSON string
+            ])
+            self._db.create_table(self.TABLE_EMOTIONAL, schema=schema)
+            logger.info(f"📋 Created table: {self.TABLE_EMOTIONAL}")
     
     def _get_table(self, table_name: str):
         """Get a table by name."""
@@ -490,6 +508,7 @@ class MemoryStore:
             'conversations': self.count(self.TABLE_CONVERSATIONS),
             'knowledge': self.count(self.TABLE_KNOWLEDGE),
             'skills': self.count(self.TABLE_SKILLS),
+            'emotional': self.count(self.TABLE_EMOTIONAL),
             'path': str(self.db_path),
         }
     

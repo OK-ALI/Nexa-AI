@@ -400,6 +400,16 @@ class NeuralMemoryPanel(QWidget):
         self.filter_skill_btn.clicked.connect(lambda: self._filter_by_type('skill'))
         filter_row.addWidget(self.filter_skill_btn)
         
+        self.filter_emo_btn = QPushButton(" Emotional")
+        self.filter_emo_btn.setCheckable(True)
+        self.filter_emo_btn.setStyleSheet(BUTTON_STYLE)
+        self.filter_emo_btn.setMinimumWidth(90)
+        if icon_mgr:
+            self.filter_emo_btn.setIcon(icon_mgr.get_icon('heart', 16))
+            self.filter_emo_btn.setIconSize(QSize(16, 16))
+        self.filter_emo_btn.clicked.connect(lambda: self._filter_by_type('emotional'))
+        filter_row.addWidget(self.filter_emo_btn)
+        
         # Separator between memory filters and users
         separator = QLabel("|")
         separator.setStyleSheet("color: rgba(255, 255, 255, 0.2); font-size: 14px; padding: 0 4px;")
@@ -492,6 +502,22 @@ class NeuralMemoryPanel(QWidget):
                 mem_dict['memory_type'] = 'skill'
                 self.all_memories.append(mem_dict)
             
+            # Load emotional memories (Phase 30 — LanceDB integration)
+            try:
+                emotional = sm.store.get_all('emotional', limit=100) if hasattr(sm, 'store') else []
+                for emo in emotional:
+                    if hasattr(emo, 'to_dict'):
+                        mem_dict = emo.to_dict()
+                    elif isinstance(emo, dict):
+                        mem_dict = emo
+                    else:
+                        mem_dict = {}
+                    
+                    mem_dict['memory_type'] = 'emotional'
+                    self.all_memories.append(mem_dict)
+            except Exception as e:
+                logger.debug(f"Emotional memories not yet available: {e}")
+            
             logger.info(f"📚 Loaded {len(self.all_memories)} memories")
             
         except Exception as e:
@@ -514,6 +540,8 @@ class NeuralMemoryPanel(QWidget):
             {"id": "8", "memory_type": "knowledge", "fact": "User is a developer", "importance": 0.8},
             {"id": "9", "memory_type": "conversation", "user_message": "Set a reminder", "nexa_response": "Reminder set for 3 PM.", "importance": 0.6},
             {"id": "10", "memory_type": "skill", "action": "take_screenshot", "importance": 0.7},
+            {"id": "11", "memory_type": "emotional", "content": "User has exam tomorrow", "emotion": "stressed", "category": "event", "importance": 0.8},
+            {"id": "12", "memory_type": "emotional", "content": "User wants to learn guitar", "emotion": "happy", "category": "goal", "importance": 0.7},
         ]
         logger.info("📚 Loaded demo memories")
         self._update_graph()
@@ -524,7 +552,8 @@ class NeuralMemoryPanel(QWidget):
         formatted = []
         for mem in self.all_memories:
             # Determine content for display
-            content = mem.get('user_message') or mem.get('fact') or mem.get('action') or 'Memory'
+            content = (mem.get('user_message') or mem.get('fact') or 
+                      mem.get('action') or mem.get('content') or 'Memory')
             
             formatted.append({
                 'id': mem.get('id', str(len(formatted))),
@@ -569,7 +598,8 @@ class NeuralMemoryPanel(QWidget):
                         table_map = {
                             'conversation': 'conversations',
                             'knowledge': 'knowledge',
-                            'skill': 'skills'
+                            'skill': 'skills',
+                            'emotional': 'emotional'
                         }
                         table = table_map.get(mem_type, 'conversations')
                         
@@ -678,6 +708,7 @@ class NeuralMemoryPanel(QWidget):
         self.filter_conv_btn.setChecked(memory_type == 'conversation')
         self.filter_know_btn.setChecked(memory_type == 'knowledge')
         self.filter_skill_btn.setChecked(memory_type == 'skill')
+        self.filter_emo_btn.setChecked(memory_type == 'emotional')
         self.filter_users_btn.setChecked(False)
         
         if memory_type is None:
@@ -806,7 +837,8 @@ class NeuralMemoryPanel(QWidget):
                             f"All memories have been cleared:\n"
                             f"• Conversations: {result.get('conversations', 0)}\n"
                             f"• Knowledge: {result.get('knowledge', 0)}\n"
-                            f"• Skills: {result.get('skills', 0)}"
+                            f"• Skills: {result.get('skills', 0)}\n"
+                            f"• Emotional: {result.get('emotional', 0)}"
                         )
                 except Exception as e:
                     logger.error(f"Purge failed: {e}")
@@ -905,6 +937,7 @@ class NeuralMemoryPanel(QWidget):
         self.filter_conv_btn.setChecked(False)
         self.filter_know_btn.setChecked(False)
         self.filter_skill_btn.setChecked(False)
+        self.filter_emo_btn.setChecked(False)
         self.filter_users_btn.setChecked(True)
         
         # Switch stacked view
