@@ -314,6 +314,11 @@ class NexaModernWindow(QMainWindow):
                 'tooltip': "NEXA Guidelines",
                 'callback': self._toggle_guidelines,
             },
+            'content': {
+                'icon': lambda: self._icon_mgr.get_icon('content', icon_size),
+                'tooltip': "Toggle Content Mode",
+                'callback': self._toggle_content_mode,
+            },
         }
         
         # Load saved button placement from preferences
@@ -391,7 +396,7 @@ class NexaModernWindow(QMainWindow):
         Returns:
             Tuple of (sidebar_order, topbar_order) lists.
         """
-        default_order = ['theme', 'companion', 'memory', 'music', 'guide']
+        default_order = ['theme', 'companion', 'memory', 'music', 'guide', 'content']
         try:
             prefs_path = Path("config/ui_preferences.json")
             if prefs_path.exists():
@@ -401,9 +406,16 @@ class NexaModernWindow(QMainWindow):
                 saved_topbar = prefs.get('topbar_order', [])
                 
                 if saved_sidebar and isinstance(saved_sidebar, list):
-                    # Validate - make sure all buttons are accounted for
+                    # Merge any new buttons missing from saved config
+                    all_saved = set(saved_sidebar) | set(saved_topbar)
+                    all_defined = set(default_order)
+                    missing = all_defined - all_saved
+                    if missing:
+                        saved_sidebar.extend(sorted(missing))
+                        logger.info(f"📌 Added new sidebar buttons: {missing}")
+                    # Validate — only keep known button IDs
                     all_buttons = set(saved_sidebar) | set(saved_topbar)
-                    if all_buttons == set(default_order):
+                    if all_buttons >= all_defined:
                         return saved_sidebar, saved_topbar
         except Exception as e:
             logger.debug(f"Could not load sidebar order: {e}")
@@ -1939,7 +1951,48 @@ class NexaModernWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    
+    def _toggle_content_mode(self):
+        """Toggle Content Mode — show/restore window if active, or enter/exit content mode."""
+        try:
+            executor = self.brain.executor if self.brain else None
+            if not executor:
+                return
+
+            content_window = getattr(executor, 'content_window', None)
+
+            # If content window exists, bring it to front
+            if content_window is not None:
+                if content_window.isMinimized():
+                    content_window.showNormal()
+                if not content_window.isVisible():
+                    content_window.setWindowOpacity(0.0)
+                    content_window.show()
+                    self._content_restore_anim = QPropertyAnimation(content_window, b"windowOpacity")
+                    self._content_restore_anim.setDuration(300)
+                    self._content_restore_anim.setStartValue(0.0)
+                    self._content_restore_anim.setEndValue(1.0)
+                    self._content_restore_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                    self._content_restore_anim.start()
+                content_window.raise_()
+                content_window.activateWindow()
+                logger.info("📝 Content Mode window restored/focused")
+                return
+
+            # No window — check if we should enter or exit content mode
+            from core.brain import NexaState
+            if self.brain.state == NexaState.CONTENT_MODE:
+                # State says content mode but no window — exit it
+                executor.exit_content_mode()
+            else:
+                # Enter content mode
+                executor.enter_content_mode()
+                logger.info("📝 Content Mode entered via sidebar")
+
+        except Exception as e:
+            logger.error(f"Failed to toggle Content Mode: {e}")
+            import traceback
+            traceback.print_exc()
+
     def _toggle_music_player(self):
         """Toggle the music player popup and ensure library is ready."""
         try:

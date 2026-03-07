@@ -253,7 +253,7 @@ class ContentBoxWindow(QMainWindow):
 
         self.min_btn = QPushButton("\u2014")
         self.min_btn.setFixedSize(35, 35)
-        self.min_btn.clicked.connect(self.showMinimized)
+        self.min_btn.clicked.connect(self._minimize_to_hidden)
         layout.addWidget(self.min_btn)
 
         self.close_btn = QPushButton("\u2715")
@@ -677,6 +677,28 @@ class ContentBoxWindow(QMainWindow):
         self.fade_animation.setEndValue(1.0)
         self.fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.fade_animation.start()
+
+    def changeEvent(self, event):
+        """Intercept OS-level minimize — convert to hide so sidebar/tray can restore."""
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            event.ignore()
+            QTimer.singleShot(0, self._minimize_to_hidden)
+            return
+        super().changeEvent(event)
+
+    def _minimize_to_hidden(self):
+        """Hide the window instead of OS minimize (recoverable via sidebar/tray)."""
+        if self.isMinimized():
+            self.showNormal()
+        self._min_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._min_anim.setDuration(150)
+        self._min_anim.setStartValue(1.0)
+        self._min_anim.setEndValue(0.0)
+        self._min_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        self._min_anim.finished.connect(self.hide)
+        self._min_anim.start()
+        logger.info("📝 Content Mode minimized to hidden (use sidebar or tray to restore)")
 
     def closeEvent(self, event):
         """Handle window close."""

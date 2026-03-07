@@ -111,6 +111,17 @@ class NexaSystemTray(QSystemTrayIcon):
         
         menu.addSeparator()
         
+        # Panel toggles
+        self.content_mode_action = QAction("Show Content Mode", self)
+        self.content_mode_action.triggered.connect(self._toggle_content_mode)
+        menu.addAction(self.content_mode_action)
+        
+        self.memory_panel_action = QAction("Show Memory Panel", self)
+        self.memory_panel_action.triggered.connect(self._toggle_memory_panel)
+        menu.addAction(self.memory_panel_action)
+        
+        menu.addSeparator()
+        
         # Clear history
         clear_action = QAction("Clear History", self)
         clear_action.triggered.connect(self._clear_history)
@@ -231,7 +242,17 @@ class NexaSystemTray(QSystemTrayIcon):
                 self.parent_window.quit_application()
             else:
                 self.parent_window.close()
-    
+
+    def _toggle_content_mode(self):
+        """Show/restore Content Mode window via the main window's toggle."""
+        if self.parent_window and hasattr(self.parent_window, '_toggle_content_mode'):
+            self.parent_window._toggle_content_mode()
+
+    def _toggle_memory_panel(self):
+        """Show/restore Memory Panel via the main window's toggle."""
+        if self.parent_window and hasattr(self.parent_window, '_toggle_memory_panel'):
+            self.parent_window._toggle_memory_panel()
+
     def update_state(self, state: NexaState):
         """
         Update tray icon to reflect current state.

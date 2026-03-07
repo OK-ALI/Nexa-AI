@@ -1100,6 +1100,22 @@ class NeuralMemoryPanel(QWidget):
         self.detail_card.hide()
         self.closed.emit()
         self.hide()
+
+    def changeEvent(self, event):
+        """Intercept OS-level minimize (e.g. Win+D) — convert to hide so sidebar can restore."""
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            event.ignore()
+            QTimer.singleShot(0, self._restore_from_minimize)
+            return
+        super().changeEvent(event)
+
+    def _restore_from_minimize(self):
+        """Convert minimize to hide (recoverable via sidebar toggle)."""
+        self.showNormal()
+        self.hide()
+        self.closed.emit()
+        logger.info("🧠 Memory Panel minimized → hidden (use sidebar to restore)")
     
     # ========================================================================
     # Mouse Events (for dragging)
