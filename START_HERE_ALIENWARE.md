@@ -1,0 +1,90 @@
+# NEXA NLM Alienware Training Pack
+
+This pack contains only the files needed to train and evaluate the NEXA NLM LoRA on the Alienware laptop.
+
+## Target
+
+- Dataset: `datasets\nlm_v1\nlm_v1_pass4_10k_strict.jsonl`
+- Eval seed: `datasets\nlm_v1\nlm_v1_eval_seed.jsonl`
+- Output adapter: `models\nlm_v1_lora_pass4_10k_strict`
+- Dashboard: `http://127.0.0.1:8765`
+
+## Setup
+
+Open PowerShell in this folder, then run:
+
+```powershell
+py -3.12 -m venv .venv-nlm
+.\.venv-nlm\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 torchaudio==2.10.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -r tools\nlm\requirements-nlm-training.txt
+```
+
+## Check Readiness
+
+```powershell
+python tools\nlm\check_training_readiness.py --dataset datasets\nlm_v1\nlm_v1_pass4_10k_strict.jsonl
+python tools\nlm\audit_nlm_dataset.py --dataset datasets\nlm_v1\nlm_v1_pass4_10k_strict.jsonl
+```
+
+## Optional Dashboard
+
+Open a second PowerShell window:
+
+```powershell
+.\.venv-nlm\Scripts\Activate.ps1
+python tools\nlm\training_dashboard_server.py --log-dir data\nlm_logs --port 8765
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+## Train
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --dataset datasets\nlm_v1\nlm_v1_pass4_10k_strict.jsonl `
+  --output-dir models\nlm_v1_lora_pass4_10k_strict `
+  --epochs 1 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 250 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass4_10k_strict_$stamp.log"
+```
+
+## Evaluate
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass4_10k_strict `
+  --predictions datasets\nlm_v1\prototype_lora_pass4_10k_strict_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass4_10k_strict_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass4_10k_strict_predictions.jsonl `
+  --report-json data\nlm_reports\pass4_10k_strict_$stamp.json `
+  --report-md data\nlm_reports\pass4_10k_strict_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass4_10k_strict_$stamp.log"
+```
+
+## Copy Back After Training
+
+Copy these back to the main NEXA machine:
+
+```text
+models\nlm_v1_lora_pass4_10k_strict
+datasets\nlm_v1\prototype_lora_pass4_10k_strict_predictions.jsonl
+data\nlm_logs
+data\nlm_reports
+```

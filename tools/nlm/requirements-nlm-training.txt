@@ -1,0 +1,22 @@
+# NLM fine-tuning environment
+#
+# Install PyTorch CUDA first with the command in docs/NLM_TRAINING_RUNBOOK.md,
+# then install this file:
+#
+#   python -m pip install -r tools/nlm/requirements-nlm-training.txt
+#
+# Keep this separate from the main NEXA runtime requirements.
+
+unsloth
+transformers
+trl
+datasets
+accelerate
+bitsandbytes
+sentencepiece
+protobuf
+safetensors
+peft
+xformers
+hf_transfer
+fsspec[http]==2025.9.0
