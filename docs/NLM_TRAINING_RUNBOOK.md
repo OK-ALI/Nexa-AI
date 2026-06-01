@@ -238,3 +238,90 @@ python tools\nlm\score_nlm_eval.py `
   --report-md data\nlm_reports\pass2_broad_score_$stamp.md `
   2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass2_broad_$stamp.log"
 ```
+
+## Pass 5 Tiny Adapter Repair
+
+Pass 4 10k strict on Alienware reached:
+
+- Valid JSON: `100.0%`
+- Function accuracy: `98.5%`
+- Parameter match: `97.1%`
+- Response text match: `99.3%`
+- Strict pass: `96.4%`
+- Failures: `5`
+
+Pass 5 repairs only those five themes by continuing from the saved pass4 LoRA adapter.
+
+Build or refresh the repair files:
+
+```powershell
+python tools\nlm\build_nlm_pass5_repair.py
+```
+
+Expected outputs:
+
+```text
+datasets\nlm_v1\nlm_v1_pass5_repair_600.jsonl
+datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl
+```
+
+Train pass5 from pass4:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --adapter-model models\nlm_v1_lora_pass4_10k_strict `
+  --dataset datasets\nlm_v1\nlm_v1_pass5_repair_600.jsonl `
+  --output-dir models\nlm_v1_lora_pass5_repair `
+  --epochs 2 `
+  --learning-rate 5e-5 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 50 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass5_repair_$stamp.log"
+```
+
+Focused repair eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5_repair `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_focused_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5_repair_focused_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_focused_predictions.jsonl `
+  --report-json data\nlm_reports\pass5_repair_focused_$stamp.json `
+  --report-md data\nlm_reports\pass5_repair_focused_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5_repair_focused_$stamp.log"
+```
+
+Broad eval after focused eval passes:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5_repair `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_broad_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5_repair_broad_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_broad_predictions.jsonl `
+  --report-json data\nlm_reports\pass5_repair_broad_$stamp.json `
+  --report-md data\nlm_reports\pass5_repair_broad_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5_repair_broad_$stamp.log"
+```
+
+Promotion criteria:
+
+- Focused repair eval: `100%` strict pass.
+- Broad eval: strict pass `>= 98.5%`.
+- No new broad failures outside the original five unless the report shows an eval wording issue.

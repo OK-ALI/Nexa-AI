@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--base-model", default="unsloth/Llama-3.1-8B-Instruct")
+    parser.add_argument(
+        "--adapter-model",
+        type=Path,
+        help="Optional saved LoRA adapter directory to continue training from.",
+    )
     parser.add_argument("--max-seq-length", type=int, default=4096)
     parser.add_argument("--load-in-4bit", action="store_true", default=True)
     parser.add_argument("--lora-r", type=int, default=16)
@@ -51,11 +56,17 @@ def main() -> int:
     args = parse_args()
     if not args.dataset.exists():
         raise SystemExit(f"Dataset not found: {args.dataset}")
+    if args.adapter_model and not args.adapter_model.exists():
+        raise SystemExit(f"Adapter model not found: {args.adapter_model}")
+    if args.adapter_model and args.output_dir.resolve() == args.adapter_model.resolve():
+        raise SystemExit("Refusing to overwrite --adapter-model. Choose a different --output-dir.")
 
     log_step(f"Python: {sys.executable}")
     log_step(f"Dataset: {args.dataset}")
     log_step(f"Output dir: {args.output_dir}")
     log_step(f"Base model: {args.base_model}")
+    if args.adapter_model:
+        log_step(f"Continuing from adapter: {args.adapter_model}")
     log_step("Importing Unsloth and training libraries...")
     try:
         from unsloth import FastLanguageModel, is_bfloat16_supported
@@ -69,32 +80,39 @@ def main() -> int:
             f"{exc}"
         ) from exc
 
-    log_step("Loading base model and tokenizer. First run may download several GB...")
+    model_name = str(args.adapter_model) if args.adapter_model else args.base_model
+    if args.adapter_model:
+        log_step("Loading saved LoRA adapter and tokenizer for continued training...")
+    else:
+        log_step("Loading base model and tokenizer. First run may download several GB...")
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.base_model,
+        model_name=model_name,
         max_seq_length=args.max_seq_length,
         load_in_4bit=args.load_in_4bit,
     )
 
-    log_step("Applying LoRA adapters...")
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=args.lora_r,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=args.seed,
-    )
+    if args.adapter_model:
+        log_step("Using existing LoRA adapters from --adapter-model.")
+    else:
+        log_step("Applying LoRA adapters...")
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=args.lora_r,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=args.seed,
+        )
 
     log_step("Loading JSONL dataset...")
     dataset = load_dataset("json", data_files=str(args.dataset), split="train")

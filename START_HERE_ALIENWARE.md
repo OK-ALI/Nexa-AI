@@ -88,3 +88,72 @@ datasets\nlm_v1\prototype_lora_pass4_10k_strict_predictions.jsonl
 data\nlm_logs
 data\nlm_reports
 ```
+
+## Pass 5 Tiny Repair
+
+Use this only after pass4 exists locally at:
+
+```text
+models\nlm_v1_lora_pass4_10k_strict
+```
+
+Build or refresh the repair files:
+
+```powershell
+python tools\nlm\build_nlm_pass5_repair.py
+```
+
+Train pass5 by continuing from pass4:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --adapter-model models\nlm_v1_lora_pass4_10k_strict `
+  --dataset datasets\nlm_v1\nlm_v1_pass5_repair_600.jsonl `
+  --output-dir models\nlm_v1_lora_pass5_repair `
+  --epochs 2 `
+  --learning-rate 5e-5 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 50 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass5_repair_$stamp.log"
+```
+
+Focused repair eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5_repair `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_focused_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5_repair_focused_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_focused_predictions.jsonl `
+  --report-json data\nlm_reports\pass5_repair_focused_$stamp.json `
+  --report-md data\nlm_reports\pass5_repair_focused_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5_repair_focused_$stamp.log"
+```
+
+Broad eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5_repair `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_broad_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5_repair_broad_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5_repair_broad_predictions.jsonl `
+  --report-json data\nlm_reports\pass5_repair_broad_$stamp.json `
+  --report-md data\nlm_reports\pass5_repair_broad_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5_repair_broad_$stamp.log"
+```
