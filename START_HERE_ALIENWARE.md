@@ -157,3 +157,67 @@ python tools\nlm\score_nlm_eval.py `
   --report-md data\nlm_reports\pass5_repair_broad_$stamp.md `
   2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5_repair_broad_$stamp.log"
 ```
+
+## Pass 6 Repaired 10k
+
+Use this for the reliable promotion candidate. It trains fresh from the base model on a full repaired 10k dataset.
+
+Build or refresh the repaired 10k:
+
+```powershell
+python tools\nlm\build_nlm_pass6_repaired_10k.py
+```
+
+Train Pass 6:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --dataset datasets\nlm_v1\nlm_v1_pass6_10k_repaired.jsonl `
+  --output-dir models\nlm_v1_lora_pass6_10k_repaired `
+  --epochs 1 `
+  --learning-rate 2e-4 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 250 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass6_10k_repaired_$stamp.log"
+```
+
+Focused repair eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass6_10k_repaired `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_focused_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass6_10k_repaired_focused_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_focused_predictions.jsonl `
+  --report-json data\nlm_reports\pass6_10k_repaired_focused_$stamp.json `
+  --report-md data\nlm_reports\pass6_10k_repaired_focused_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass6_10k_repaired_focused_$stamp.log"
+```
+
+Broad eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass6_10k_repaired `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_broad_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass6_10k_repaired_broad_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_broad_predictions.jsonl `
+  --report-json data\nlm_reports\pass6_10k_repaired_broad_$stamp.json `
+  --report-md data\nlm_reports\pass6_10k_repaired_broad_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass6_10k_repaired_broad_$stamp.log"
+```

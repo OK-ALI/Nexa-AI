@@ -325,3 +325,167 @@ Promotion criteria:
 - Focused repair eval: `100%` strict pass.
 - Broad eval: strict pass `>= 98.5%`.
 - No new broad failures outside the original five unless the report shows an eval wording issue.
+
+## Pass 5B Mixed Repair Rehearsal
+
+Pass 5 fixed the focused repair eval but regressed broad eval. Pass 5B mixes the same repair examples with rehearsal examples from the successful pass4 10k dataset.
+
+Build the mixed dataset:
+
+```powershell
+python tools\nlm\build_nlm_pass5b_mixed_repair.py
+```
+
+Expected output:
+
+```text
+datasets\nlm_v1\nlm_v1_pass5b_mixed_repair_3k.jsonl
+```
+
+Mix:
+
+- `600` pass5 repair examples.
+- `2400` pass4 rehearsal examples.
+
+Train pass5B from pass4:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --adapter-model models\nlm_v1_lora_pass4_10k_strict `
+  --dataset datasets\nlm_v1\nlm_v1_pass5b_mixed_repair_3k.jsonl `
+  --output-dir models\nlm_v1_lora_pass5b_mixed_repair `
+  --epochs 1 `
+  --learning-rate 1e-5 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 100 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass5b_mixed_repair_$stamp.log"
+```
+
+Focused repair eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5b_mixed_repair `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5b_mixed_repair_focused_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5b_mixed_repair_focused_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5b_mixed_repair_focused_predictions.jsonl `
+  --report-json data\nlm_reports\pass5b_mixed_repair_focused_$stamp.json `
+  --report-md data\nlm_reports\pass5b_mixed_repair_focused_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5b_mixed_repair_focused_$stamp.log"
+```
+
+Broad eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass5b_mixed_repair `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5b_mixed_repair_broad_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass5b_mixed_repair_broad_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass5b_mixed_repair_broad_predictions.jsonl `
+  --report-json data\nlm_reports\pass5b_mixed_repair_broad_$stamp.json `
+  --report-md data\nlm_reports\pass5b_mixed_repair_broad_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass5b_mixed_repair_broad_$stamp.log"
+```
+
+Promotion criteria:
+
+- Focused repair strict pass should be close to `100%`.
+- Broad strict pass must be at least pass4's `96.4%`, ideally `98%+`.
+- If broad eval regresses below pass4, keep pass4 and do not promote pass5B.
+
+## Pass 6 Repaired 10k Promotion Candidate
+
+Pass 6 is the reliable promotion path after Pass 5 overfit. It trains fresh from the base model on a full repaired 10k dataset.
+
+Build the repaired 10k dataset:
+
+```powershell
+python tools\nlm\build_nlm_pass6_repaired_10k.py
+```
+
+Expected output:
+
+```text
+datasets\nlm_v1\nlm_v1_pass6_10k_repaired.jsonl
+```
+
+Dataset mix:
+
+- `600` targeted repair examples from Pass 5.
+- `9400` broad rehearsal examples from the successful Pass 4 10k dataset.
+- Final bucket balance: `4500` function, `2000` follow-up, `1500` conversation, `1000` capability, `500` clarification, `500` safety.
+
+Train Pass 6 fresh from the base model:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$env:HF_XET_HIGH_PERFORMANCE = "1"
+$env:PYTHONUNBUFFERED = "1"
+
+python -u tools\nlm\train_nlm_unsloth.py `
+  --dataset datasets\nlm_v1\nlm_v1_pass6_10k_repaired.jsonl `
+  --output-dir models\nlm_v1_lora_pass6_10k_repaired `
+  --epochs 1 `
+  --learning-rate 2e-4 `
+  --max-seq-length 2048 `
+  --batch-size 1 `
+  --grad-accum 8 `
+  --logging-steps 5 `
+  --save-steps 250 `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_train_pass6_10k_repaired_$stamp.log"
+```
+
+Focused repair eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass6_10k_repaired `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_focused_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass6_10k_repaired_focused_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_pass5_repair_eval.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_focused_predictions.jsonl `
+  --report-json data\nlm_reports\pass6_10k_repaired_focused_$stamp.json `
+  --report-md data\nlm_reports\pass6_10k_repaired_focused_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass6_10k_repaired_focused_$stamp.log"
+```
+
+Broad eval:
+
+```powershell
+python -u tools\nlm\run_lora_eval.py `
+  --adapter models\nlm_v1_lora_pass6_10k_repaired `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_broad_predictions.jsonl `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_eval_pass6_10k_repaired_broad_$stamp.log"
+
+python tools\nlm\score_nlm_eval.py `
+  --eval datasets\nlm_v1\nlm_v1_eval_seed.jsonl `
+  --predictions datasets\nlm_v1\prototype_lora_pass6_10k_repaired_broad_predictions.jsonl `
+  --report-json data\nlm_reports\pass6_10k_repaired_broad_$stamp.json `
+  --report-md data\nlm_reports\pass6_10k_repaired_broad_$stamp.md `
+  2>&1 | Tee-Object -FilePath "data\nlm_logs\nlm_score_pass6_10k_repaired_broad_$stamp.log"
+```
+
+Promotion criteria:
+
+- Focused repair eval: `100%` strict pass.
+- Broad eval: strict pass `>= 98%` preferred, must beat Pass 4's `96.4%`.
+- If Pass 6 does not beat Pass 4 broad strict score, keep Pass 4 as the best adapter.
