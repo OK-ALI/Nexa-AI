@@ -489,3 +489,12 @@ Promotion criteria:
 - Focused repair eval: `100%` strict pass.
 - Broad eval: strict pass `>= 98%` preferred, must beat Pass 4's `96.4%`.
 - If Pass 6 does not beat Pass 4 broad strict score, keep Pass 4 as the best adapter.
+
+Pass 6 Alienware result:
+
+- Adapter: `models\nlm_v1_lora_pass6_10k_repaired`
+- Focused repair strict pass: `96.0%` (`24/25`)
+- Broad strict pass: `97.1%` (`133/137`)
+- Broad failures: `4`
+- Decision: Pass 6 is the best broad adapter so far and beats Pass 4's `96.4%` broad strict score.
+- Detailed notes: `docs\NLM_PASS6_10K_REPAIRED_RESULTS.md`
